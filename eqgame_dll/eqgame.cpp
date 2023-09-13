@@ -61,6 +61,9 @@ DWORD o_MouseCenter = 0x0055B722;
 bool auto_login = false;
 char UserName[64];
 char PassWord[64];
+float g_fStartZoomInterpolationValue = 0.0f;
+float g_fInterpolationLerpProgress = 0.0f;
+float g_fEndZoomInterpolationValue = 0.0f;
 
 typedef signed int(__cdecl* ProcessGameEvents_t)();
 ProcessGameEvents_t return_ProcessGameEvents;
@@ -260,6 +263,13 @@ int base_val = 362;
 class Eqmachooks {
 public:
 
+	unsigned char CEverQuest__DropHeldItemOnGround_Trampoline(DWORD *, int);
+	unsigned char CEverQuest__DropHeldItemOnGround(DWORD *con, int arg)
+	{
+	
+		((int(__cdecl*)(DWORD*, int))0x005313B3)(con, arg);
+		return CEverQuest__DropHeldItemOnGround_Trampoline(con, arg);
+	}
 	unsigned char CEverQuest__HandleWorldMessage_Trampoline(DWORD *,unsigned __int32,char *,unsigned __int32);
 	unsigned char CEverQuest__HandleWorldMessage_Detour(DWORD *con,unsigned __int32 Opcode,char *Buffer,unsigned __int32 len)
 	{
@@ -333,11 +343,106 @@ public:
 		return CEverQuest__HandleWorldMessage_Trampoline(con,Opcode,Buffer,len);
 	}
 
+	template<typename _Float>
+	constexpr std::enable_if_t<std::is_floating_point_v<_Float>, _Float>
+		lerp(_Float __a, _Float __b, _Float __t)
+	{
+		if (std::isnan(__a) || std::isnan(__b) || std::isnan(__t))
+			return std::numeric_limits<_Float>::quiet_NaN();
+		else if ((__a <= _Float{ 0 } && __b >= _Float{ 0 })
+			|| (__a >= _Float{ 0 } && __b <= _Float{ 0 }))
+			// ab <= 0 but product could overflow.
+#ifndef FMA
+			return __t * __b + (_Float{ 1 } -__t) * __a;
+#else
+			return std::fma(__t, __b, (_Float{ 1 } -__t) * __a);
+#endif
+		else if (__t == _Float{ 1 })
+			return __b;
+		else
+		{ // monotonic near t == 1.
+#ifndef FMA
+			const auto __x = __a + __t * (__b - __a);
+#else
+			const auto __x = std::fma(__t, __b - __a, __a);
+#endif
+			return (__t > _Float{ 1 }) == (__b > __a)
+				? max(__b, __x)
+				: min(__b, __x);
+		}
+	}
+
+	void DoMouseCameraInterpolation()
+	{
+		if (g_fStartZoomInterpolationValue == 0.0f || g_fEndZoomInterpolationValue == 0.0f)
+			return;
+		PatchA((DWORD*)0x004B3614, "\x90\x90\xEB", 3);
+
+		DWORD zoomAddress = NULL;
+		DWORD cameraView = EQ_ReadMemory<DWORD>(EQ_CAMERA_VIEW);
+
+		FLOAT cameraThirdPersonZoom = 0.0f;
+
+		FLOAT cameraThirdPersonZoomMax = EQ_ReadMemory<FLOAT>(EQ_CAMERA_VIEW_THIRD_PERSON_ZOOM_MAX);
+
+		float zoom = 0.0f;
+
+		if (cameraView == EQ_CAMERA_VIEW_THIRD_PERSON2)
+		{
+			cameraThirdPersonZoom = EQ_ReadMemory<FLOAT>(EQ_CAMERA_VIEW_THIRD_PERSON2_ZOOM);
+
+			zoomAddress = EQ_CAMERA_VIEW_THIRD_PERSON2_ZOOM;
+		}
+		else if (cameraView == EQ_CAMERA_VIEW_THIRD_PERSON3)
+		{
+			cameraThirdPersonZoom = EQ_ReadMemory<FLOAT>(EQ_CAMERA_VIEW_THIRD_PERSON3_ZOOM);
+
+			zoomAddress = EQ_CAMERA_VIEW_THIRD_PERSON3_ZOOM;
+		}
+		else if (cameraView == EQ_CAMERA_VIEW_THIRD_PERSON4)
+		{
+			cameraThirdPersonZoom = EQ_ReadMemory<FLOAT>(EQ_CAMERA_VIEW_THIRD_PERSON4_ZOOM);
+
+			zoomAddress = EQ_CAMERA_VIEW_THIRD_PERSON4_ZOOM;
+		}
+		if (zoomAddress)
+		{
+			float curZoom = EQ_ReadMemory<FLOAT>(zoomAddress);
+
+			float presumedZoom = g_fStartZoomInterpolationValue;
+			float startZoom = g_fEndZoomInterpolationValue;
+			float position_lerp = lerp(g_fStartZoomInterpolationValue, g_fEndZoomInterpolationValue, g_fInterpolationLerpProgress + 0.5f);
+			g_fInterpolationLerpProgress += 0.5f;
+
+
+			EQ_WriteMemory<FLOAT>(zoomAddress, position_lerp);
+			if (g_fInterpolationLerpProgress >= 1.0f)
+			{
+				g_fStartZoomInterpolationValue = 0.0f;
+				g_fEndZoomInterpolationValue = 0.0f;
+				g_fInterpolationLerpProgress = 0.0f;
+			}
+		}
+
+	}
+
 	int __cdecl  CDisplay__Process_Events_Trampoline();
 	int __cdecl  CDisplay__Process_Events_Detour(){
 		if (EQ_OBJECT_CEverQuest != NULL && EQ_OBJECT_CEverQuest->GameState > 0 && EQ_OBJECT_CEverQuest->GameState != 255 && can_fullscreen) {
 			SetEQhWnd();
 			ProcessAltState();
+
+			if (EQ_OBJECT_CEverQuest->GameState == EQ_GAME_STATE_IN_GAME)
+			{
+				DoMouseCameraInterpolation();
+			}
+			else
+			{
+				g_fStartZoomInterpolationValue = 0.0f;
+				g_fInterpolationLerpProgress = 0.0f;
+				g_fEndZoomInterpolationValue = 0.0f;
+			}
+
 			if (!ResolutionStored && *(DWORD*)(0x007F97D0) != 0)
 			{
 				DWORD ptr = *(DWORD*)(0x007F97D0);
@@ -562,6 +667,7 @@ public:
 };
 
 DETOUR_TRAMPOLINE_EMPTY(unsigned char Eqmachooks::CEverQuest__HandleWorldMessage_Trampoline(DWORD *,unsigned __int32,char *,unsigned __int32));
+DETOUR_TRAMPOLINE_EMPTY(unsigned char Eqmachooks::CEverQuest__DropHeldItemOnGround_Trampoline(DWORD *, int));
 DETOUR_TRAMPOLINE_EMPTY(int __cdecl CEverQuest__DisplayScreen_Trampoline(char *));
 DETOUR_TRAMPOLINE_EMPTY(DWORD WINAPI GetModuleFileNameA_tramp(HMODULE,LPTSTR,DWORD));
 DETOUR_TRAMPOLINE_EMPTY(DWORD WINAPI WritePrivateProfileStringA_tramp(LPCSTR,LPCSTR,LPCSTR, LPCSTR));
@@ -908,6 +1014,7 @@ int __fastcall EQMACMQ_DETOUR_CBuffWindow__PostDraw(void* this_ptr, void* not_us
 	return result;
 }
 
+
 void EQMACMQ_DoMouseWheelZoom(int mouseWheelDelta)
 {
 	PEQSPAWNINFO playerSpawn = (PEQSPAWNINFO)EQ_OBJECT_PlayerSpawn;
@@ -915,7 +1022,7 @@ void EQMACMQ_DoMouseWheelZoom(int mouseWheelDelta)
 	if (playerSpawn == NULL)
 		return;
 
-	float g_mouseWheelZoomMultiplier = 0.44f;
+	float g_mouseWheelZoomMultiplier = 2.0f;
 
 	float g_minZoom = playerSpawn->ModelHeightOffset * g_mouseWheelZoomMultiplier;
 
@@ -971,7 +1078,9 @@ void EQMACMQ_DoMouseWheelZoom(int mouseWheelDelta)
 					if (zoomAddress != NULL)
 					{
 						zoom = g_minZoom;
-
+						g_fStartZoomInterpolationValue = 0.0f;
+						g_fInterpolationLerpProgress = 0.0f;
+						g_fEndZoomInterpolationValue = 0.0f;
 						EQ_WriteMemory<FLOAT>(zoomAddress, zoom);
 					}
 				}
@@ -982,12 +1091,15 @@ void EQMACMQ_DoMouseWheelZoom(int mouseWheelDelta)
 				{
 					zoom = cameraThirdPersonZoom - (playerSpawn->ModelHeightOffset * g_mouseWheelZoomMultiplier);
 
+					float curZoom = EQ_ReadMemory<FLOAT>(zoomAddress);
 					if (zoom < g_minZoom)
 					{
 						zoom = g_minZoom;
 					}
-
-					EQ_WriteMemory<FLOAT>(zoomAddress, zoom);
+					g_fStartZoomInterpolationValue = curZoom;
+					g_fInterpolationLerpProgress = 0.0f;
+					g_fEndZoomInterpolationValue = zoom;
+					//EQ_WriteMemory<FLOAT>(zoomAddress, zoom);
 				}
 			}
 		}
@@ -998,7 +1110,12 @@ void EQMACMQ_DoMouseWheelZoom(int mouseWheelDelta)
 		{
 			zoom = g_minZoom;
 
+			g_fStartZoomInterpolationValue = 0.0f;
+			g_fInterpolationLerpProgress = 0.0f;
+			g_fEndZoomInterpolationValue = 0.0f;
+
 			EQ_WriteMemory<FLOAT>(EQ_CAMERA_VIEW_THIRD_PERSON2_ZOOM, zoom);
+
 
 			EQ_WriteMemory<DWORD>(EQ_CAMERA_VIEW, EQ_CAMERA_VIEW_THIRD_PERSON2);
 		}
@@ -1013,12 +1130,15 @@ void EQMACMQ_DoMouseWheelZoom(int mouseWheelDelta)
 			{
 				zoom = cameraThirdPersonZoom + (playerSpawn->ModelHeightOffset * g_mouseWheelZoomMultiplier);
 
+				float curZoom = EQ_ReadMemory<FLOAT>(zoomAddress);
 				if (zoom > cameraThirdPersonZoomMax)
 				{
 					zoom = cameraThirdPersonZoomMax;
 				}
-
-				EQ_WriteMemory<FLOAT>(zoomAddress, zoom);
+				g_fStartZoomInterpolationValue = curZoom;
+				g_fInterpolationLerpProgress = 0.0f;
+				g_fEndZoomInterpolationValue = zoom;
+				//EQ_WriteMemory<FLOAT>(zoomAddress, zoom);
 			}
 		}
 	}
@@ -1876,6 +1996,8 @@ void InitHooks()
 	EzDetour(cwAddress, CreateWindowExA_Detour, CreateWindowExA_Trampoline);
 	//here to fix the no items on corpse bug - eqmule
 	EzDetour(0x004E829F, &Eqmachooks::CEverQuest__HandleWorldMessage_Detour, &Eqmachooks::CEverQuest__HandleWorldMessage_Trampoline);
+	//EzDetour(0x00530D7E, &Eqmachooks::CEverQuest__DropHeldItemOnGround, &Eqmachooks::CEverQuest__DropHeldItemOnGround_Trampoline);
+	
 	EzDetour(gmfadress, GetModuleFileNameA_detour, GetModuleFileNameA_tramp);
 	EzDetour(wpsaddress, WritePrivateProfileStringA_detour, WritePrivateProfileStringA_tramp);
 
