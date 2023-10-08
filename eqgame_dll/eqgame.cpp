@@ -2085,8 +2085,8 @@ void InitHooks()
 	EzDetour(gmfadress, GetModuleFileNameA_detour, GetModuleFileNameA_tramp);
 	EzDetour(wpsaddress, WritePrivateProfileStringA_detour, WritePrivateProfileStringA_tramp);
 
-	//EQMACMQ_REAL_CBuffWindow__RefreshBuffDisplay = (EQ_FUNCTION_TYPE_CBuffWindow__RefreshBuffDisplay)DetourFunction((PBYTE)EQ_FUNCTION_CBuffWindow__RefreshBuffDisplay, (PBYTE)EQMACMQ_DETOUR_CBuffWindow__RefreshBuffDisplay);
-	//EQMACMQ_REAL_CBuffWindow__PostDraw = (EQ_FUNCTION_TYPE_CBuffWindow__PostDraw)DetourFunction((PBYTE)EQ_FUNCTION_CBuffWindow__PostDraw, (PBYTE)EQMACMQ_DETOUR_CBuffWindow__PostDraw);
+	EQMACMQ_REAL_CBuffWindow__RefreshBuffDisplay = (EQ_FUNCTION_TYPE_CBuffWindow__RefreshBuffDisplay)DetourFunction((PBYTE)EQ_FUNCTION_CBuffWindow__RefreshBuffDisplay, (PBYTE)EQMACMQ_DETOUR_CBuffWindow__RefreshBuffDisplay);
+	EQMACMQ_REAL_CBuffWindow__PostDraw = (EQ_FUNCTION_TYPE_CBuffWindow__PostDraw)DetourFunction((PBYTE)EQ_FUNCTION_CBuffWindow__PostDraw, (PBYTE)EQMACMQ_DETOUR_CBuffWindow__PostDraw);
 	EQMACMQ_REAL_EQ_Character__CastSpell = (EQ_FUNCTION_TYPE_EQ_Character__CastSpell)DetourFunction((PBYTE)EQ_FUNCTION_EQ_Character__CastSpell, (PBYTE)EQMACMQ_DETOUR_EQ_Character__CastSpell);
 
 	heqwMod = GetModuleHandle("eqw.dll");
@@ -2242,8 +2242,8 @@ void ExitHooks()
 	RemoveDetour(EQ_FUNCTION_HandleMouseWheel);
 
 	DetourRemove((PBYTE)EQMACMQ_REAL_CCharacterSelectWnd__Quit, (PBYTE)EQMACMQ_DETOUR_CCharacterSelectWnd__Quit);
-	//DetourRemove((PBYTE)EQMACMQ_REAL_CBuffWindow__RefreshBuffDisplay, (PBYTE)EQMACMQ_DETOUR_CBuffWindow__RefreshBuffDisplay);
-	//DetourRemove((PBYTE)EQMACMQ_REAL_CBuffWindow__PostDraw, (PBYTE)EQMACMQ_DETOUR_CBuffWindow__PostDraw);
+	DetourRemove((PBYTE)EQMACMQ_REAL_CBuffWindow__RefreshBuffDisplay, (PBYTE)EQMACMQ_DETOUR_CBuffWindow__RefreshBuffDisplay);
+	DetourRemove((PBYTE)EQMACMQ_REAL_CBuffWindow__PostDraw, (PBYTE)EQMACMQ_DETOUR_CBuffWindow__PostDraw);
 	DetourRemove((PBYTE)EQMACMQ_REAL_EQ_Character__CastSpell, (PBYTE)EQMACMQ_DETOUR_EQ_Character__CastSpell);
 	DetourRemove((PBYTE)EQMACMQ_REAL_CEverQuest__InterpretCmd, (PBYTE)EQMACMQ_DETOUR_CEverQuest__InterpretCmd);
 }
