@@ -13,6 +13,9 @@
 #include <string>
 #include <iomanip>
 
+#include <random>
+#include <iostream>
+
 #define BYTEn(x, n) (*((BYTE*)&(x)+n))
 #define BYTE1(x) BYTEn(x, 0)
 #define BYTE2(x) BYTEn(x, 1)
@@ -58,6 +61,8 @@ POINT posPoint;
 DWORD o_MouseEvents = 0x0055B3B9;
 DWORD o_MouseCenter = 0x0055B722;
 
+bool g_bEnableBrownSkeletons = false;
+bool g_bEnableExtendedNameplates = true;
 bool auto_login = false;
 char UserName[64];
 char PassWord[64];
@@ -254,11 +259,121 @@ bool ShiftPressed() {
 	return *(DWORD*)0x0080931C > 0;
 }
 
+bool g_bEnableClassicMusic = false;
+
+int g_LastMusicStop = 0;
+int g_curMusicTrack = 2;
+
 int __cdecl msg_send_corpse_equip(class EQ_Equipment *);
 FUNCTION_AT_ADDRESS(int __cdecl msg_send_corpse_equip(class EQ_Equipment *),0x4DF03D);
 int base_val = 362;
 class Eqmachooks {
 public:
+
+	int  CEQMusicManager__Set_Trampoline(int, int, int, int, int, int, int, int, int);
+	int  CEQMusicManager__Set_Detour(int musicIdx, int unknown1, int trackIdx, int volume, int unknown, int timeoutDelay, int timeInDelay, int range /* ? */, int bIsMp3)
+	{
+		if (g_bEnableClassicMusic)
+		{
+			rename("combattheme1.mp3", "combattheme1.mp3.bak");
+			rename("combattheme2.mp3", "combattheme2.mp3.bak");
+			rename("deaththeme.mp3", "deaththeme.mp3.bak");
+			rename("eqtheme.mp3", "eqtheme.mp3.bak");
+		}
+		else //if (!g_bEnableClassicMusic)
+		{
+			rename("combattheme1.mp3.bak", "combattheme1.mp3");
+			rename("combattheme2.mp3.bak", "combattheme2.mp3");
+			rename("deaththeme.mp3.bak", "deaththeme.mp3");
+			rename("eqtheme.mp3.bak", "eqtheme.mp3");
+		}
+
+		if (musicIdx == 2 && g_bEnableClassicMusic)
+		{
+			CEQMusicManager__Set_Trampoline(2500, unknown1, 0, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
+			CEQMusicManager__Set_Trampoline(2501, unknown1, 1, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
+			CEQMusicManager__Set_Trampoline(2502, unknown1, 2, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
+			CEQMusicManager__Set_Trampoline(2503, unknown1, 3, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
+			CEQMusicManager__Set_Trampoline(2504, unknown1, 4, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
+			CEQMusicManager__Set_Trampoline(2505, unknown1, 5, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
+			CEQMusicManager__Set_Trampoline(2506, unknown1, 6, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
+			CEQMusicManager__Set_Trampoline(2507, unknown1, 7, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
+			CEQMusicManager__Set_Trampoline(2508, unknown1, 8, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
+			CEQMusicManager__Set_Trampoline(2509, unknown1, 9, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
+			CEQMusicManager__Set_Trampoline(2510, unknown1, 10, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
+			CEQMusicManager__Set_Trampoline(2511, unknown1, 11, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
+			CEQMusicManager__Set_Trampoline(2512, unknown1, 12, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
+			CEQMusicManager__Set_Trampoline(2513, unknown1, 13, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
+			CEQMusicManager__Set_Trampoline(2514, unknown1, 14, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
+			CEQMusicManager__Set_Trampoline(2515, unknown1, 15, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
+			CEQMusicManager__Set_Trampoline(2516, unknown1, 16, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
+			CEQMusicManager__Set_Trampoline(2517, unknown1, 17, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
+			CEQMusicManager__Set_Trampoline(2518, unknown1, 18, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
+			CEQMusicManager__Set_Trampoline(2519, unknown1, 19, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
+			CEQMusicManager__Set_Trampoline(2520, unknown1, 20, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
+			CEQMusicManager__Set_Trampoline(2521, unknown1, 21, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
+			CEQMusicManager__Set_Trampoline(2522, unknown1, 22, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
+		}
+
+		return CEQMusicManager__Set_Trampoline(musicIdx, unknown1, trackIdx, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
+
+	}
+
+	int  CEQMusicManager__Play_Trampoline(int, int);
+	int  CEQMusicManager__Play_Detour(int trackIdx, int bStartStop)
+	{
+		if (g_bEnableClassicMusic)
+		{
+			std::random_device rd;
+			std::mt19937 mt(rd());
+			std::uniform_int_distribution<int> dist(1, 3);
+			auto tickCount = GetTickCount();
+
+
+
+			if (trackIdx == 2)
+			{
+				if (g_LastMusicStop == 0)
+				{
+					g_LastMusicStop = tickCount;
+				}
+
+				if (bStartStop == 1)
+				{
+					if (tickCount >= g_LastMusicStop + 10000)
+					{
+						switch (dist(mt))
+						{
+						case 1:
+						{
+							g_curMusicTrack = 2501;
+							break;
+						}
+						case 2:
+						{
+							g_curMusicTrack = 2502;
+							break;
+						}
+						case 3:
+						default:
+						{
+							g_curMusicTrack = 2500;
+							break;
+						}
+						}
+					}
+					trackIdx = g_curMusicTrack;
+				}
+				else if (bStartStop == 0)
+				{
+					trackIdx = g_curMusicTrack;
+					g_LastMusicStop = GetTickCount();
+				}
+			}
+		}
+		return CEQMusicManager__Play_Trampoline(trackIdx, bStartStop);
+
+	}
 
 	unsigned char CEverQuest__HandleWorldMessage_Trampoline(DWORD *,unsigned __int32,char *,unsigned __int32);
 	unsigned char CEverQuest__HandleWorldMessage_Detour(DWORD *con,unsigned __int32 Opcode,char *Buffer,unsigned __int32 len)
@@ -562,6 +677,8 @@ public:
 };
 
 DETOUR_TRAMPOLINE_EMPTY(unsigned char Eqmachooks::CEverQuest__HandleWorldMessage_Trampoline(DWORD *,unsigned __int32,char *,unsigned __int32));
+DETOUR_TRAMPOLINE_EMPTY(int Eqmachooks::CEQMusicManager__Set_Trampoline(int, int, int, int, int, int, int, int, int));
+DETOUR_TRAMPOLINE_EMPTY(int Eqmachooks::CEQMusicManager__Play_Trampoline(int, int));
 DETOUR_TRAMPOLINE_EMPTY(int __cdecl CEverQuest__DisplayScreen_Trampoline(char *));
 DETOUR_TRAMPOLINE_EMPTY(DWORD WINAPI GetModuleFileNameA_tramp(HMODULE,LPTSTR,DWORD));
 DETOUR_TRAMPOLINE_EMPTY(DWORD WINAPI WritePrivateProfileStringA_tramp(LPCSTR,LPCSTR,LPCSTR, LPCSTR));
@@ -1267,6 +1384,33 @@ void PatchSaveBypass()
 	// Inverse NewUI flags for OldUI naming
 	const char test11[] = { 0xC6, 0x05 };
 	PatchA((DWORD*)0x005598C5, &test11, sizeof(test11));
+
+	// Inverse NewUI flags for OldUI naming
+	const char test12[] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0xEB };
+	PatchA((DWORD*)0x005431C1, &test12, sizeof(test12));
+
+	if (g_bEnableBrownSkeletons)
+	{
+		const char test13[] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0xEB };
+		PatchA((DWORD*)0x0049F28F, &test13, sizeof(test13));
+	}
+}
+
+typedef int(__cdecl *_s3dSetStringSpriteYonClip)(intptr_t, int, float);
+_s3dSetStringSpriteYonClip s3dSetStringSpriteYonClip_Trampoline;
+int __cdecl s3dSetStringSpriteYonClip_Detour(intptr_t sprite, int a2, float distance)
+{
+	//Log("s3dSetStringSpriteYonClip_Detour 0x%lx %d %f", sprite, a2, distance);
+	if (g_bEnableExtendedNameplates == false)
+		return s3dSetStringSpriteYonClip_Trampoline(sprite, a2, distance);
+
+	if ((*(unsigned int *)&distance) == 0x428c0000) // 70.0f
+	{
+		a2 = 0;
+		//distance = 1000.0f;
+	}
+
+	return s3dSetStringSpriteYonClip_Trampoline(sprite, a2, distance);
 }
 
 HWND WINAPI CreateWindowExA_Detour(DWORD     dwExStyle,
@@ -1293,6 +1437,15 @@ HWND WINAPI CreateWindowExA_Detour(DWORD     dwExStyle,
 			// then add bypass for skipping license and splash screen
 			if (delta == 0x25300) {
 				//SkipLicense();
+				HINSTANCE heqGfxMod = GetModuleHandle("eqgfx_dx8.dll");
+				if (heqGfxMod)
+				{
+					_s3dSetStringSpriteYonClip s3dSetStringSpriteYonClip = (_s3dSetStringSpriteYonClip)GetProcAddress(heqGfxMod, "s3dSetStringSpriteYonClip");
+					if(s3dSetStringSpriteYonClip)
+					{
+						( _s3dSetStringSpriteYonClip)s3dSetStringSpriteYonClip_Trampoline = (_s3dSetStringSpriteYonClip)DetourFunction((PBYTE)s3dSetStringSpriteYonClip, (PBYTE)s3dSetStringSpriteYonClip_Detour);
+					}
+				}
 				SkipSplash();
 				//SetDInputCooperativeMode();
 			}
@@ -1854,6 +2007,58 @@ void CheckPromptUIChoice()
 	}
 }
 
+
+void CheckClientMiniMods()
+{
+	char szResult[255];
+	char szDefault[255];
+	sprintf(szDefault, "%s", "NONE");
+	DWORD error = GetPrivateProfileStringA("Defaults", "EnableBrownSkeletonHack", szDefault, szResult, 255, "./eqclient.ini");
+	if (strcmp(szResult, "FALSE") == 0) // False
+	{
+		g_bEnableBrownSkeletons = false;
+	}
+	else if (strcmp(szResult, "NONE") == 0) // Not found
+	{
+		WritePrivateProfileStringA_tramp("Defaults", "EnableBrownSkeletonHack", "FALSE", "./eqclient.ini");
+	}
+	else // any other value (1, true, potato)
+	{
+		g_bEnableBrownSkeletons = true;
+	}
+
+
+	error = GetPrivateProfileStringA("Defaults", "EnableExtendedNameplateDistance", szDefault, szResult, 255, "./eqclient.ini");
+	if (strcmp(szResult, "FALSE") == 0) // False
+	{
+		g_bEnableExtendedNameplates = false;
+	}
+	else if (strcmp(szResult, "NONE") == 0) // Not found
+	{
+		g_bEnableExtendedNameplates = true;
+		WritePrivateProfileStringA_tramp("Defaults", "EnableExtendedNameplateDistance", "TRUE", "./eqclient.ini");
+	}
+	else
+	{
+		g_bEnableExtendedNameplates = true;
+	}
+
+	error = GetPrivateProfileStringA("Defaults", "EnableClassicMusic", szDefault, szResult, 255, "./eqclient.ini");
+	if (strcmp(szResult, "FALSE") == 0) // False
+	{
+		g_bEnableClassicMusic = false;
+	}
+	else if (strcmp(szResult, "NONE") == 0) // Not found
+	{
+		g_bEnableClassicMusic = false;
+		WritePrivateProfileStringA_tramp("Defaults", "EnableClassicMusic", "FALSE", "./eqclient.ini");
+	}
+	else
+	{
+		g_bEnableClassicMusic = true;
+	}
+}
+
 void InitHooks()
 {
 	//bypass filename req
@@ -1861,7 +2066,6 @@ void InitHooks()
 	PatchA((DWORD*)0x005595A7, &test3, sizeof(test3));
 
 	PatchSaveBypass();
-
 	//heqwMod
 	HMODULE hkernel32Mod = GetModuleHandle("kernel32.dll");
 	gmfadress = (DWORD)GetProcAddress(hkernel32Mod, "GetModuleFileNameA");
@@ -1876,6 +2080,8 @@ void InitHooks()
 	EzDetour(cwAddress, CreateWindowExA_Detour, CreateWindowExA_Trampoline);
 	//here to fix the no items on corpse bug - eqmule
 	EzDetour(0x004E829F, &Eqmachooks::CEverQuest__HandleWorldMessage_Detour, &Eqmachooks::CEverQuest__HandleWorldMessage_Trampoline);
+	EzDetour(0x00550AF8, &Eqmachooks::CEQMusicManager__Set_Detour, &Eqmachooks::CEQMusicManager__Set_Trampoline);
+	EzDetour(0x004D54C1, &Eqmachooks::CEQMusicManager__Play_Detour, &Eqmachooks::CEQMusicManager__Play_Trampoline);
 	EzDetour(gmfadress, GetModuleFileNameA_detour, GetModuleFileNameA_tramp);
 	EzDetour(wpsaddress, WritePrivateProfileStringA_detour, WritePrivateProfileStringA_tramp);
 
@@ -1994,7 +2200,8 @@ void InitHooks()
 
 	// turn on chat keepalive
 	sprintf(szDefault, "%d", 1);
-	WritePrivateProfileStringA("Defaults", "ChatKeepAlive", szDefault, "./eqclient.ini");
+	WritePrivateProfileStringA_tramp("Defaults", "ChatKeepAlive", szDefault, "./eqclient.ini");
+	CheckClientMiniMods();
 	bInitalized=true;
 }
 
