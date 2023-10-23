@@ -263,6 +263,9 @@ bool g_bEnableClassicMusic = false;
 
 int g_LastMusicStop = 0;
 int g_curMusicTrack = 2;
+int g_curGlobalMusicTrack = 0;
+bool bIsWaterPlaying = false;
+int g_prevGlobalMusicTrack = 0;
 
 int __cdecl msg_send_corpse_equip(class EQ_Equipment *);
 FUNCTION_AT_ADDRESS(int __cdecl msg_send_corpse_equip(class EQ_Equipment *),0x4DF03D);
@@ -273,21 +276,6 @@ public:
 	int  CEQMusicManager__Set_Trampoline(int, int, int, int, int, int, int, int, int);
 	int  CEQMusicManager__Set_Detour(int musicIdx, int unknown1, int trackIdx, int volume, int unknown, int timeoutDelay, int timeInDelay, int range /* ? */, int bIsMp3)
 	{
-		if (g_bEnableClassicMusic)
-		{
-			rename("combattheme1.mp3", "combattheme1.mp3.bak");
-			rename("combattheme2.mp3", "combattheme2.mp3.bak");
-			rename("deaththeme.mp3", "deaththeme.mp3.bak");
-			rename("eqtheme.mp3", "eqtheme.mp3.bak");
-		}
-		else //if (!g_bEnableClassicMusic)
-		{
-			rename("combattheme1.mp3.bak", "combattheme1.mp3");
-			rename("combattheme2.mp3.bak", "combattheme2.mp3");
-			rename("deaththeme.mp3.bak", "deaththeme.mp3");
-			rename("eqtheme.mp3.bak", "eqtheme.mp3");
-		}
-
 		if (musicIdx == 2 && g_bEnableClassicMusic)
 		{
 			CEQMusicManager__Set_Trampoline(2500, unknown1, 0, volume, unknown, timeoutDelay, timeInDelay, range, bIsMp3);
@@ -324,12 +312,11 @@ public:
 	{
 		if (g_bEnableClassicMusic)
 		{
+
 			std::random_device rd;
 			std::mt19937 mt(rd());
 			std::uniform_int_distribution<int> dist(1, 3);
 			auto tickCount = GetTickCount();
-
-
 
 			if (trackIdx == 2)
 			{
@@ -371,8 +358,45 @@ public:
 				}
 			}
 		}
+		if (bStartStop == 1)
+		{
+			g_curGlobalMusicTrack = trackIdx;
+		}
+		else
+		{
+			g_curGlobalMusicTrack = 0;
+		}
+
 		return CEQMusicManager__Play_Trampoline(trackIdx, bStartStop);
 
+	}
+
+	int  CEQMusicManager__WavPlay_Trampoline(int, int);
+	int  CEQMusicManager__WavPlay_Detour(int wavIdx, int soundControl)
+	{
+		if (g_bEnableClassicMusic)
+		{
+			if (wavIdx == 100 && !bIsWaterPlaying)
+			{
+				if (g_curGlobalMusicTrack != 0 && g_curGlobalMusicTrack != 2509)
+				{
+					g_prevGlobalMusicTrack = g_curGlobalMusicTrack;
+					CEQMusicManager__Play_Trampoline(g_curGlobalMusicTrack, 0);
+				}
+				CEQMusicManager__Play_Trampoline(2508, 1);
+				bIsWaterPlaying = true;
+			}
+			else if(wavIdx == 99 && bIsWaterPlaying)
+			{
+				int prevTrack = g_prevGlobalMusicTrack;
+				CEQMusicManager__Play_Trampoline(2508, 0);
+				if (g_prevGlobalMusicTrack != 0)
+					CEQMusicManager__Play_Trampoline(g_prevGlobalMusicTrack, 1);
+				bIsWaterPlaying = false;
+			}
+		}
+
+		return CEQMusicManager__WavPlay_Trampoline(wavIdx, soundControl);
 	}
 
 	unsigned char CEverQuest__HandleWorldMessage_Trampoline(DWORD *,unsigned __int32,char *,unsigned __int32);
@@ -679,12 +703,14 @@ public:
 DETOUR_TRAMPOLINE_EMPTY(unsigned char Eqmachooks::CEverQuest__HandleWorldMessage_Trampoline(DWORD *,unsigned __int32,char *,unsigned __int32));
 DETOUR_TRAMPOLINE_EMPTY(int Eqmachooks::CEQMusicManager__Set_Trampoline(int, int, int, int, int, int, int, int, int));
 DETOUR_TRAMPOLINE_EMPTY(int Eqmachooks::CEQMusicManager__Play_Trampoline(int, int));
+DETOUR_TRAMPOLINE_EMPTY(int Eqmachooks::CEQMusicManager__WavPlay_Trampoline(int, int));
 DETOUR_TRAMPOLINE_EMPTY(int __cdecl CEverQuest__DisplayScreen_Trampoline(char *));
 DETOUR_TRAMPOLINE_EMPTY(DWORD WINAPI GetModuleFileNameA_tramp(HMODULE,LPTSTR,DWORD));
 DETOUR_TRAMPOLINE_EMPTY(DWORD WINAPI WritePrivateProfileStringA_tramp(LPCSTR,LPCSTR,LPCSTR, LPCSTR));
 DETOUR_TRAMPOLINE_EMPTY(int __cdecl SendExeChecksum_Trampoline(void));
 DETOUR_TRAMPOLINE_EMPTY(int __cdecl ProcessKeyDown_Trampoline(int));
 DETOUR_TRAMPOLINE_EMPTY(int __cdecl ProcessKeyUp_Trampoline(int));
+DETOUR_TRAMPOLINE_EMPTY(unsigned __int64 __stdcall GetCpuTicks2_Trampoline());
 DETOUR_TRAMPOLINE_EMPTY(int __cdecl do_quit_Trampoline(int, int));
 DETOUR_TRAMPOLINE_EMPTY(LRESULT WINAPI WndProc_Trampoline(HWND, UINT, WPARAM, LPARAM));
 DETOUR_TRAMPOLINE_EMPTY(void WINAPI RightMouseDown_Trampoline(__int16, __int16));
@@ -1385,7 +1411,7 @@ void PatchSaveBypass()
 	const char test11[] = { 0xC6, 0x05 };
 	PatchA((DWORD*)0x005598C5, &test11, sizeof(test11));
 
-	// Inverse NewUI flags for OldUI naming
+	// Face picker patch.
 	const char test12[] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0xEB };
 	PatchA((DWORD*)0x005431C1, &test12, sizeof(test12));
 
@@ -1413,6 +1439,81 @@ int __cdecl s3dSetStringSpriteYonClip_Detour(intptr_t sprite, int a2, float dist
 	return s3dSetStringSpriteYonClip_Trampoline(sprite, a2, distance);
 }
 
+typedef unsigned __int64(__cdecl *_GetCpuSpeed2)();
+typedef float (__cdecl *_FastMathFunction)(float);
+
+_FastMathFunction GetFastCosine_Trampoline;
+_FastMathFunction GetFastSine_Trampoline;
+_FastMathFunction GetFastCotangent_Trampoline;
+
+_GetCpuSpeed2 GetCpuSpeed2_Trampoline;
+_GetCpuSpeed2 GetCpuSpeed3_Trampoline;
+
+unsigned __int64 __stdcall GetCpuTicks_Detour() {
+
+	LARGE_INTEGER qpfResult;
+	if (!QueryPerformanceCounter(&qpfResult))
+	{
+		MessageBoxA(NULL, "This OS is not supported.", "Error", 0);
+		exit(-1);
+	}
+
+	unsigned __int64 result = qpfResult.QuadPart / 1000ui64;
+	Sleep(1000u);
+	return result;
+}
+
+unsigned __int64 g_ProcessorSpeed;
+unsigned __int64 __stdcall GetCpuSpeed2_Detour() {
+
+		LARGE_INTEGER qwWait, qwStart, qwCurrent;
+		QueryPerformanceCounter(&qwStart);
+		QueryPerformanceFrequency(&qwWait);
+		qwWait.QuadPart >>= 5;
+		unsigned __int64 Start = __rdtsc();
+		do
+		{
+			QueryPerformanceCounter(&qwCurrent);
+		} while (qwCurrent.QuadPart - qwStart.QuadPart < qwWait.QuadPart);
+		g_ProcessorSpeed = ((__rdtsc() - Start) << 5) / 1000000.0;
+		return 1000000.0;
+}
+
+DWORD org_nonFastCos = 0;
+DWORD org_nonFastSin = 0;
+DWORD org_nonFastCotangent = 0;
+
+float __cdecl t3dFastCosine_Detour(float a1) {
+
+	if (org_nonFastCos)
+	{
+		return ((float (__cdecl*) (float)) org_nonFastCos)(a1);
+	}
+
+	return GetFastCosine_Trampoline(a1);
+}
+
+float __cdecl t3dFastSine_Detour(float a1) {
+
+	if (org_nonFastSin)
+	{
+		return ((float(__cdecl*) (float)) org_nonFastSin)(a1);
+	}
+
+	return GetFastSine_Trampoline(a1);
+}
+
+float __cdecl t3dFastCotangent_Detour(float a1) {
+
+	if (org_nonFastCotangent)
+	{
+		return ((float(__cdecl*) (float)) org_nonFastCotangent)(a1);
+	}
+
+	return GetFastCotangent_Trampoline(a1);
+}
+
+
 HWND WINAPI CreateWindowExA_Detour(DWORD     dwExStyle,
 	LPCSTR   lpClassName,
 	LPCSTR   lpWindowName,
@@ -1437,15 +1538,12 @@ HWND WINAPI CreateWindowExA_Detour(DWORD     dwExStyle,
 			// then add bypass for skipping license and splash screen
 			if (delta == 0x25300) {
 				//SkipLicense();
-				HINSTANCE heqGfxMod = GetModuleHandle("eqgfx_dx8.dll");
-				if (heqGfxMod)
+				if(g_bEnableExtendedNameplates)
 				{
-					_s3dSetStringSpriteYonClip s3dSetStringSpriteYonClip = (_s3dSetStringSpriteYonClip)GetProcAddress(heqGfxMod, "s3dSetStringSpriteYonClip");
-					if(s3dSetStringSpriteYonClip)
-					{
-						( _s3dSetStringSpriteYonClip)s3dSetStringSpriteYonClip_Trampoline = (_s3dSetStringSpriteYonClip)DetourFunction((PBYTE)s3dSetStringSpriteYonClip, (PBYTE)s3dSetStringSpriteYonClip_Detour);
-					}
+					g_ProcessorSpeed = 0;
 				}
+				//(_GetCpuSpeed2)GetCpuSpeed3_Trampoline = (_GetCpuSpeed2)DetourFunction((PBYTE)0x00559BF4, (PBYTE)GetCpuSpeed2_Detour);
+				//PatchA((DWORD*)0x007812F8, &g_ProcessorSpeed, 8);
 				SkipSplash();
 				//SetDInputCooperativeMode();
 			}
@@ -1558,7 +1656,7 @@ int __cdecl ProcessKeyDown_Detour(int a1)
 			char szDefault[255];
 
 			sprintf(szDefault, "%s", "FALSE");
-			WritePrivateProfileStringA("Options", "WindowedMode", szDefault, "./eqclient.ini");
+			WritePrivateProfileStringA_tramp("Options", "WindowedMode", szDefault, "./eqclient.ini");
 			start_fullscreen = true;
 			first_maximize = false;
 		}
@@ -1577,7 +1675,7 @@ int __cdecl ProcessKeyDown_Detour(int a1)
 			}
 			char szDefault[255];
 			sprintf(szDefault, "%s", "TRUE");
-			WritePrivateProfileStringA("Options", "WindowedMode", szDefault, "./eqclient.ini");
+			WritePrivateProfileStringA_tramp("Options", "WindowedMode", szDefault, "./eqclient.ini");
 			start_fullscreen = false;
 		}
 		bWindowedMode = !bWindowedMode;
@@ -2035,8 +2133,8 @@ void CheckClientMiniMods()
 	}
 	else if (strcmp(szResult, "NONE") == 0) // Not found
 	{
-		g_bEnableExtendedNameplates = true;
-		WritePrivateProfileStringA_tramp("Defaults", "EnableExtendedNameplateDistance", "TRUE", "./eqclient.ini");
+		g_bEnableExtendedNameplates = false;
+		WritePrivateProfileStringA_tramp("Defaults", "EnableExtendedNameplateDistance", "FALSE", "./eqclient.ini");
 	}
 	else
 	{
@@ -2056,6 +2154,9 @@ void CheckClientMiniMods()
 	else
 	{
 		g_bEnableClassicMusic = true;
+		EzDetour(0x00550AF8, &Eqmachooks::CEQMusicManager__Set_Detour, &Eqmachooks::CEQMusicManager__Set_Trampoline);
+		EzDetour(0x004D54C1, &Eqmachooks::CEQMusicManager__Play_Detour, &Eqmachooks::CEQMusicManager__Play_Trampoline);
+		//EzDetour(0x004D518B, &Eqmachooks::CEQMusicManager__WavPlay_Detour, &Eqmachooks::CEQMusicManager__WavPlay_Trampoline);
 	}
 }
 
@@ -2065,6 +2166,51 @@ void InitHooks()
 	const char test3[] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,0x90, 0xEB, 0x1B, 0x90, 0x90, 0x90, 0x90 };
 	PatchA((DWORD*)0x005595A7, &test3, sizeof(test3));
 
+	HMODULE eqgfx_dll = LoadLibraryA("eqgfx_dx8.dll");
+	if (eqgfx_dll)
+	{
+		HINSTANCE heqGfxMod = GetModuleHandle("eqgfx_dx8.dll");
+		if (heqGfxMod)
+		{
+			_s3dSetStringSpriteYonClip s3dSetStringSpriteYonClip = (_s3dSetStringSpriteYonClip)GetProcAddress(heqGfxMod, "s3dSetStringSpriteYonClip");
+			if (s3dSetStringSpriteYonClip)
+			{
+				(_s3dSetStringSpriteYonClip)s3dSetStringSpriteYonClip_Trampoline = (_s3dSetStringSpriteYonClip)DetourFunction((PBYTE)s3dSetStringSpriteYonClip, (PBYTE)s3dSetStringSpriteYonClip_Detour);
+			}
+			_FastMathFunction ot3dFastCosine = (_FastMathFunction)GetProcAddress(heqGfxMod, "t3dFloatFastCosine");
+			if (ot3dFastCosine)
+			{
+				(_FastMathFunction)GetFastCosine_Trampoline = (_FastMathFunction)DetourFunction((PBYTE)ot3dFastCosine, (PBYTE)t3dFastCosine_Detour);
+			}
+
+			_FastMathFunction ot3dFastSine = (_FastMathFunction)GetProcAddress(heqGfxMod, "t3dFloatFastSine");
+			if (ot3dFastSine)
+			{
+				(_FastMathFunction)GetFastSine_Trampoline = (_FastMathFunction)DetourFunction((PBYTE)ot3dFastSine, (PBYTE)t3dFastSine_Detour);
+			}
+
+			_FastMathFunction ot3dFastCotangent = (_FastMathFunction)GetProcAddress(heqGfxMod, "t3dFloatFastCotangent");
+			if (ot3dFastCotangent)
+			{
+				(_FastMathFunction)GetFastCotangent_Trampoline = (_FastMathFunction)DetourFunction((PBYTE)ot3dFastCotangent, (PBYTE)t3dFastCotangent_Detour);
+			}
+
+			org_nonFastCos = (DWORD)GetProcAddress(heqGfxMod, "t3dFloatCosine");
+			org_nonFastSin = (DWORD)GetProcAddress(heqGfxMod, "t3dFloatSine");
+			org_nonFastCotangent = (DWORD)GetProcAddress(heqGfxMod, "t3dFloatCotangent");
+			//_FastMathFunction ot3dFastCotangent = (_FastMathFunction)GetProcAddress(heqGfxMod, "t3dFloatFastCotangent");
+			//if (ot3dFastCotangent)
+			//{
+			//	(_FastMathFunction)GetFastCotangent_Trampoline = (_FastMathFunction)DetourFunction((PBYTE)ot3dFastCotangent, (PBYTE)t3dFastCotangent_Detour);
+			//}
+
+			//_GetCpuSpeed2 cpuSpeed2 = (_GetCpuSpeed2)GetProcAddress(heqGfxMod, "GetCpuSpeed2");
+			//if (cpuSpeed2)
+			//{
+			//	(_GetCpuSpeed2)GetCpuSpeed3_Trampoline = (_GetCpuSpeed2)DetourFunction((PBYTE)cpuSpeed2, (PBYTE)GetCpuSpeed2_Detour);
+			//}
+		}
+	}
 	PatchSaveBypass();
 	//heqwMod
 	HMODULE hkernel32Mod = GetModuleHandle("kernel32.dll");
@@ -2080,8 +2226,6 @@ void InitHooks()
 	EzDetour(cwAddress, CreateWindowExA_Detour, CreateWindowExA_Trampoline);
 	//here to fix the no items on corpse bug - eqmule
 	EzDetour(0x004E829F, &Eqmachooks::CEverQuest__HandleWorldMessage_Detour, &Eqmachooks::CEverQuest__HandleWorldMessage_Trampoline);
-	EzDetour(0x00550AF8, &Eqmachooks::CEQMusicManager__Set_Detour, &Eqmachooks::CEQMusicManager__Set_Trampoline);
-	EzDetour(0x004D54C1, &Eqmachooks::CEQMusicManager__Play_Detour, &Eqmachooks::CEQMusicManager__Play_Trampoline);
 	EzDetour(gmfadress, GetModuleFileNameA_detour, GetModuleFileNameA_tramp);
 	EzDetour(wpsaddress, WritePrivateProfileStringA_detour, WritePrivateProfileStringA_tramp);
 
@@ -2108,6 +2252,8 @@ void InitHooks()
 	EzDetour(EQ_FUNCTION_CEverQuest__LMouseUp, LeftMouseUp_Detour, LeftMouseUp_Trampoline);
 	EzDetour(0x004FA8C5, do_quit_Detour, do_quit_Trampoline);
 	
+	//EzDetour(0x00559BF4, GetCpuTicks2_Detour, GetCpuTicks2_Trampoline);
+
 	EzDetour(0x00538CE6, CEverQuest__DisplayScreen_Detour, CEverQuest__DisplayScreen_Trampoline);
 
 	// Add MGB for Beastlords
@@ -2142,7 +2288,7 @@ void InitHooks()
 	DWORD error = GetPrivateProfileStringA("Options", "WindowedMode", szDefault, szResult, 255, "./eqclient.ini");
 	if (GetLastError())
 	{
-		WritePrivateProfileStringA("Options", "WindowedMode", szDefault, "./eqclient.ini");
+		WritePrivateProfileStringA_tramp("Options", "WindowedMode", szDefault, "./eqclient.ini");
 	}
 	if (!strcmp(szResult, "FALSE")) {
 		start_fullscreen = true;
@@ -2219,33 +2365,33 @@ void ExitHooks()
 		return;
 	}
 
-	RemoveDetour(0x4E829F); // HandleWorldMessage
-	RemoveDetour(0x4AA8BC); // RenderWorld
-	RemoveDetour(gmfadress); // GetModuleFileNameA
-	RemoveDetour(wpsaddress); // WriteProfileStringA
-	RemoveDetour(0x4F2ED0); // SendExeChecksum
-	RemoveDetour(0x40F3E0);
-	RemoveDetour(cwAddress);
-	RemoveDetour(0x55AFE2); // ProcessEvents
-	RemoveDetour(EQ_FUNCTION_ProcessKeyDown); // process key down
-	RemoveDetour(EQ_FUNCTION_ProcessKeyUp); // process key up
-	RemoveDetour(EQ_FUNCTION_CEverQuest__RMouseDown);
-	RemoveDetour(EQ_FUNCTION_CEverQuest__RMouseUp);
-	RemoveDetour(EQ_FUNCTION_CEverQuest__LMouseDown);
-	RemoveDetour(EQ_FUNCTION_CEverQuest__LMouseUp);
-	RemoveDetour(0x55A4F4); // WndProc
-	RemoveDetour(0x538CE6); // DisplayScreen
-	RemoveDetour(0x4F35E5); // command line parsing
-	RemoveDetour(0x4B8231); // MGB for BST
-	RemoveDetour(0x4A849E); // LoD fix
-	RemoveDetour(0x4FA8C5); // do_quit
-	RemoveDetour(EQ_FUNCTION_HandleMouseWheel);
+	//RemoveDetour(0x4E829F); // HandleWorldMessage
+	//RemoveDetour(0x4AA8BC); // RenderWorld
+	//	RemoveDetour(gmfadress); // GetModuleFileNameA
+	//RemoveDetour(wpsaddress); // WriteProfileStringA
+	//RemoveDetour(0x4F2ED0); // SendExeChecksum
+	//RemoveDetour(0x40F3E0);
+	//RemoveDetour(cwAddress);
+	//RemoveDetour(0x55AFE2); // ProcessEvents
+	//RemoveDetour(EQ_FUNCTION_ProcessKeyDown); // process key down
+	//RemoveDetour(EQ_FUNCTION_ProcessKeyUp); // process key up
+	//RemoveDetour(EQ_FUNCTION_CEverQuest__RMouseDown);
+	//RemoveDetour(EQ_FUNCTION_CEverQuest__RMouseUp);
+	//RemoveDetour(EQ_FUNCTION_CEverQuest__LMouseDown);
+	//RemoveDetour(EQ_FUNCTION_CEverQuest__LMouseUp);
+	//RemoveDetour(0x55A4F4); // WndProc
+	//RemoveDetour(0x538CE6); // DisplayScreen
+	//RemoveDetour(0x4F35E5); // command line parsing
+	//RemoveDetour(0x4B8231); // MGB for BST
+	//RemoveDetour(0x4A849E); // LoD fix
+	//RemoveDetour(0x4FA8C5); // do_quit
+	//RemoveDetour(EQ_FUNCTION_HandleMouseWheel);
 
-	DetourRemove((PBYTE)EQMACMQ_REAL_CCharacterSelectWnd__Quit, (PBYTE)EQMACMQ_DETOUR_CCharacterSelectWnd__Quit);
-	DetourRemove((PBYTE)EQMACMQ_REAL_CBuffWindow__RefreshBuffDisplay, (PBYTE)EQMACMQ_DETOUR_CBuffWindow__RefreshBuffDisplay);
-	DetourRemove((PBYTE)EQMACMQ_REAL_CBuffWindow__PostDraw, (PBYTE)EQMACMQ_DETOUR_CBuffWindow__PostDraw);
-	DetourRemove((PBYTE)EQMACMQ_REAL_EQ_Character__CastSpell, (PBYTE)EQMACMQ_DETOUR_EQ_Character__CastSpell);
-	DetourRemove((PBYTE)EQMACMQ_REAL_CEverQuest__InterpretCmd, (PBYTE)EQMACMQ_DETOUR_CEverQuest__InterpretCmd);
+	//DetourRemove((PBYTE)EQMACMQ_REAL_CCharacterSelectWnd__Quit, (PBYTE)EQMACMQ_DETOUR_CCharacterSelectWnd__Quit);
+	//DetourRemove((PBYTE)EQMACMQ_REAL_CBuffWindow__RefreshBuffDisplay, (PBYTE)EQMACMQ_DETOUR_CBuffWindow__RefreshBuffDisplay);
+	//DetourRemove((PBYTE)EQMACMQ_REAL_CBuffWindow__PostDraw, (PBYTE)EQMACMQ_DETOUR_CBuffWindow__PostDraw);
+	//DetourRemove((PBYTE)EQMACMQ_REAL_EQ_Character__CastSpell, (PBYTE)EQMACMQ_DETOUR_EQ_Character__CastSpell);
+	//DetourRemove((PBYTE)EQMACMQ_REAL_CEverQuest__InterpretCmd, (PBYTE)EQMACMQ_DETOUR_CEverQuest__InterpretCmd);
 }
 
 BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved )
