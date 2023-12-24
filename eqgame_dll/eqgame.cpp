@@ -24,8 +24,8 @@
 #define FREE_THE_MOUSE
 //#define GM_MODE
 //#define LOGGING
-
 extern void Pulse();
+extern void UpdateMQ2SpawnSort();
 extern bool was_background;
 extern void LoadIniSettings();
 extern void SetEQhWnd();
@@ -66,6 +66,21 @@ bool g_bEnableExtendedNameplates = true;
 bool auto_login = false;
 char UserName[64];
 char PassWord[64];
+
+struct Tint_Struct
+{
+	uint8_t r;
+	uint8_t g;
+	uint8_t b;
+};
+
+struct SendNameSpriteTint_Struct
+{
+	uint16_t spawn_id;
+	Tint_Struct rgb;
+};
+
+std::map<uint16_t, Tint_Struct> spawn_to_name_sprite_mapping;
 
 typedef signed int(__cdecl* ProcessGameEvents_t)();
 ProcessGameEvents_t return_ProcessGameEvents;
@@ -681,6 +696,8 @@ public:
 	int CDisplay__Render_World_Trampoline();
 	int CDisplay__Render_World_Detour()
 	{
+
+		//UpdateMQ2SpawnSort();
 		Pulse();
 		return CDisplay__Render_World_Trampoline();
 	}
@@ -1420,6 +1437,9 @@ void PatchSaveBypass()
 		const char test13[] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0xEB };
 		PatchA((DWORD*)0x0049F28F, &test13, sizeof(test13));
 	}
+
+	const char test14[] = { 0xEB, 0x1A };
+	PatchA((DWORD*)0x42D14D, &test14, sizeof(test14));
 }
 
 typedef int(__cdecl *_s3dSetStringSpriteYonClip)(intptr_t, int, float);
@@ -1442,46 +1462,46 @@ int __cdecl s3dSetStringSpriteYonClip_Detour(intptr_t sprite, int a2, float dist
 typedef unsigned __int64(__cdecl *_GetCpuSpeed2)();
 typedef float (__cdecl *_FastMathFunction)(float);
 
+typedef float(__cdecl *_FastAngleArcFunction)(DWORD, DWORD, DWORD);
+
 _FastMathFunction GetFastCosine_Trampoline;
 _FastMathFunction GetFastSine_Trampoline;
 _FastMathFunction GetFastCotangent_Trampoline;
-
+_FastAngleArcFunction GetFactAngleArcFunction;
+_GetCpuSpeed2 GetCpuSpeed1_Trampoline;
 _GetCpuSpeed2 GetCpuSpeed2_Trampoline;
 _GetCpuSpeed2 GetCpuSpeed3_Trampoline;
 
+LARGE_INTEGER g_ProcessorSpeed;
+LARGE_INTEGER g_ProcessorTicks;
+
 unsigned __int64 __stdcall GetCpuTicks_Detour() {
 
-	LARGE_INTEGER qpfResult;
-	if (!QueryPerformanceCounter(&qpfResult))
-	{
-		MessageBoxA(NULL, "This OS is not supported.", "Error", 0);
-		exit(-1);
-	}
-
-	unsigned __int64 result = qpfResult.QuadPart / 1000ui64;
-	Sleep(1000u);
-	return result;
+	LARGE_INTEGER qpcResult;
+	QueryPerformanceCounter(&qpcResult);
+	return (qpcResult.QuadPart - g_ProcessorTicks.QuadPart);
 }
 
-unsigned __int64 g_ProcessorSpeed;
 unsigned __int64 __stdcall GetCpuSpeed2_Detour() {
+		unsigned __int64 v0; // rbx
+		int v2; // [rsp+20h] [rbp-48h] BYREF
+		LARGE_INTEGER Frequency; // [rsp+70h] [rbp+8h] BYREF
 
-		LARGE_INTEGER qwWait, qwStart, qwCurrent;
-		QueryPerformanceCounter(&qwStart);
-		QueryPerformanceFrequency(&qwWait);
-		qwWait.QuadPart >>= 5;
-		unsigned __int64 Start = __rdtsc();
-		do
+		if (!QueryPerformanceFrequency(&Frequency))
 		{
-			QueryPerformanceCounter(&qwCurrent);
-		} while (qwCurrent.QuadPart - qwStart.QuadPart < qwWait.QuadPart);
-		g_ProcessorSpeed = ((__rdtsc() - Start) << 5) / 1000000.0;
-		return 1000000.0;
+			MessageBoxW(0, L"This OS is not supported.", L"Error", 0);
+			exit(-1);
+		}
+		g_ProcessorSpeed.QuadPart = Frequency.QuadPart / 1000;
+		QueryPerformanceCounter(&g_ProcessorTicks);
+		Sleep(1000u);
+		return g_ProcessorSpeed.QuadPart;
 }
 
 DWORD org_nonFastCos = 0;
 DWORD org_nonFastSin = 0;
 DWORD org_nonFastCotangent = 0;
+DWORD org_fix16Tangent = 0;
 
 float __cdecl t3dFastCosine_Detour(float a1) {
 
@@ -1513,6 +1533,17 @@ float __cdecl t3dFastCotangent_Detour(float a1) {
 	return GetFastCotangent_Trampoline(a1);
 }
 
+//float __cdecl t3dAngleArcTangentFloat_Detour(DWORD a1, DWORD a2, DWORD a3) {
+//
+//	if (org_fix16Tangent)
+//	{
+//		return ((float(__cdecl*) (float)) org_fix16Tangent)(a1);
+//	}
+//
+//	return t3dAngleArcTangentFloat_Trampoline(a1);
+//}
+
+
 
 HWND WINAPI CreateWindowExA_Detour(DWORD     dwExStyle,
 	LPCSTR   lpClassName,
@@ -1540,9 +1571,10 @@ HWND WINAPI CreateWindowExA_Detour(DWORD     dwExStyle,
 				//SkipLicense();
 				if(g_bEnableExtendedNameplates)
 				{
-					g_ProcessorSpeed = 0;
+					//g_ProcessorSpeed = 0;
 				}
-				//(_GetCpuSpeed2)GetCpuSpeed3_Trampoline = (_GetCpuSpeed2)DetourFunction((PBYTE)0x00559BF4, (PBYTE)GetCpuSpeed2_Detour);
+				(_GetCpuSpeed2)GetCpuSpeed3_Trampoline = (_GetCpuSpeed2)DetourFunction((PBYTE)0x00559BF4, (PBYTE)GetCpuTicks_Detour);
+				//(_GetCpuSpeed2)GetCpuSpeed2_Trampoline = (_GetCpuSpeed2)DetourFunction((PBYTE)0x00559BF4, (PBYTE)GetCpuSpeed2_Detour);
 				//PatchA((DWORD*)0x007812F8, &g_ProcessorSpeed, 8);
 				SkipSplash();
 				//SetDInputCooperativeMode();
@@ -2194,6 +2226,7 @@ void InitHooks()
 			{
 				(_FastMathFunction)GetFastCotangent_Trampoline = (_FastMathFunction)DetourFunction((PBYTE)ot3dFastCotangent, (PBYTE)t3dFastCotangent_Detour);
 			}
+			//org_fix16Tangent = (DWORD)GetProcAddress(heqGfxMod, "t3dAngleArcTangentFix16");
 
 			org_nonFastCos = (DWORD)GetProcAddress(heqGfxMod, "t3dFloatCosine");
 			org_nonFastSin = (DWORD)GetProcAddress(heqGfxMod, "t3dFloatSine");
@@ -2204,11 +2237,17 @@ void InitHooks()
 			//	(_FastMathFunction)GetFastCotangent_Trampoline = (_FastMathFunction)DetourFunction((PBYTE)ot3dFastCotangent, (PBYTE)t3dFastCotangent_Detour);
 			//}
 
-			//_GetCpuSpeed2 cpuSpeed2 = (_GetCpuSpeed2)GetProcAddress(heqGfxMod, "GetCpuSpeed2");
-			//if (cpuSpeed2)
-			//{
-			//	(_GetCpuSpeed2)GetCpuSpeed3_Trampoline = (_GetCpuSpeed2)DetourFunction((PBYTE)cpuSpeed2, (PBYTE)GetCpuSpeed2_Detour);
-			//}
+			_GetCpuSpeed2 cpuSpeed2 = (_GetCpuSpeed2)GetProcAddress(heqGfxMod, "GetCpuSpeed2");
+			if (cpuSpeed2)
+			{
+				(_GetCpuSpeed2)GetCpuSpeed2_Trampoline = (_GetCpuSpeed2)DetourFunction((PBYTE)cpuSpeed2, (PBYTE)GetCpuSpeed2_Detour);
+			}
+
+			_GetCpuSpeed2 cpuSpeed3 = (_GetCpuSpeed2)GetProcAddress(heqGfxMod, "GetCpuSpeed3");
+			if (cpuSpeed3)
+			{
+				(_GetCpuSpeed2)GetCpuSpeed1_Trampoline = (_GetCpuSpeed2)DetourFunction((PBYTE)cpuSpeed3, (PBYTE)GetCpuSpeed2_Detour);
+			}
 		}
 	}
 	PatchSaveBypass();
@@ -2409,3 +2448,331 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 	    return TRUE;
 	}
 }
+//
+//
+//
+//extern void AddDetourf(DWORD address, ...);
+//#define EzDetourSprite(offset,detour,trampoline) AddDetourf((DWORD)offset,detour,trampoline)
+//VOID SetNameSpriteTint(PEQSPAWNINFO pSpawn);
+//
+//DWORD GetGameState(VOID)
+//{
+//	if (!EQ_OBJECT_CEverQuest)
+//	{
+//		//		DebugSpew("Could not retrieve gamestate in GetGameState()");
+//		return -1;
+//	}
+//	DWORD GameState = EQ_OBJECT_CEverQuest->GameState;
+//	return GameState;
+//}
+//
+//class EQPlayerHook
+//{
+//public:
+//
+//	void EQPlayer_ExtraDetour(PEQSPAWNINFO pSpawn)
+//	{// note: we need to keep the original registers.
+//		__asm {push eax};
+//		__asm {push ebx};
+//		__asm {push ecx};
+//		__asm {push edx};
+//		__asm {push esi};
+//		__asm {push edi};
+//		__asm {pop edi};
+//		__asm {pop esi};
+//		__asm {pop edx};
+//		__asm {pop ecx};
+//		__asm {pop ebx};
+//		__asm {pop eax};
+//	}
+//
+//	void EQPlayer_Trampoline(class EQPlayer *, unsigned char, unsigned int, unsigned char, char *);
+//	void EQPlayer_Detour(class EQPlayer *a, unsigned char b, unsigned int c, unsigned char d, char *e)
+//	{
+//		PEQSPAWNINFO pSpawn = 0;
+//		__asm {mov[pSpawn], ecx};
+//		EQPlayer_Trampoline(a, b, c, d, e);
+//		//doing some code fu here so
+//		//we dont mess with the stack
+//		__asm {
+//			cmp byte ptr[eax], 0x3;
+//			jne dontcallifnull;
+//			push		edx;
+//			push		ecx;
+//			mov         edx, dword ptr[pSpawn];
+//			push        edx;
+//			mov         ecx, dword ptr[this];
+//			call        EQPlayerHook::EQPlayer_ExtraDetour;
+//			pop			edx;
+//			pop			ecx;
+//			pop			edx;
+//		dontcallifnull:
+//		};
+//		//EQPlayer_ExtraDetour(pSpawn);
+////returnifnull:;
+//		//Sleep(0);
+//		//returnifnull:
+//		/**/
+//	}
+//
+//	VOID dEQPlayer_Trampoline();
+//	VOID dEQPlayer_Detour()
+//	{
+//		VOID(EQPlayerHook::*tmp)(void) = &EQPlayerHook::dEQPlayer_Trampoline;
+//		__asm {
+//			push ecx;
+//			push ecx;
+//			//call PluginsRemoveSpawn;
+//			pop ecx;
+//			pop ecx;
+//			call[tmp];
+//		};
+//	}
+//
+//	int SetNameSpriteState_Trampoline(PEQSPAWNINFO pSpawn, bool Show);
+//	int SetNameSpriteState_Detour(PEQSPAWNINFO pSpawn, bool Show)
+//	{
+//
+//		if (GetGameState() != GAMESTATE_INGAME || !Show)
+//			return SetNameSpriteState_Trampoline(pSpawn, Show);
+//		return 1;
+//	}
+//	//ecx should be pinstCDisplay
+//	bool SetNameSpriteTint_Trampoline(PEQSPAWNINFO pSpawn);
+//	bool SetNameSpriteTint_Detour(PEQSPAWNINFO pSpawn)
+//	{
+//		if (GetGameState() != GAMESTATE_INGAME)
+//			return SetNameSpriteTint_Trampoline(pSpawn);
+//		return 1;
+//	}
+//	int ChangeBoneStringSprite_Trampoline(struct T3D_DAG *A, struct T3D_DAG *B, char *C);
+//	int ChangeBoneStringSprite_Detour(struct T3D_DAG *A, struct T3D_DAG *B, char *C)
+//	{
+//		//DWORD myoffset = 0;
+//		//__asm{mov myoffset, ecx};
+//		//DebugSpew(" ECX = %x A=%x B=%x C=%s",myoffset,A,B,C);
+//		if (GetGameState() != GAMESTATE_INGAME) {
+//			return ChangeBoneStringSprite_Trampoline(A, B, C);
+//		}
+//		return 1;
+//	}
+//};
+//
+//DETOUR_TRAMPOLINE_EMPTY(int EQPlayerHook::ChangeBoneStringSprite_Trampoline(struct T3D_DAG *A, struct T3D_DAG *B, char *C));
+//DETOUR_TRAMPOLINE_EMPTY(bool EQPlayerHook::SetNameSpriteTint_Trampoline(PEQSPAWNINFO pSpawn));
+//DETOUR_TRAMPOLINE_EMPTY(int EQPlayerHook::SetNameSpriteState_Trampoline(PEQSPAWNINFO pSpawn, bool Show));
+//DETOUR_TRAMPOLINE_EMPTY(VOID EQPlayerHook::dEQPlayer_Trampoline(VOID));
+//DETOUR_TRAMPOLINE_EMPTY(VOID EQPlayerHook::EQPlayer_Trampoline(class EQPlayer *, unsigned char, unsigned int, unsigned char, char *));
+//
+//VOID SetNameSpriteTint(PEQSPAWNINFO pSpawn)
+//{
+//	int GameState = -1;
+//	GameState = GetGameState();
+//	if (GameState != GAMESTATE_INGAME)
+//		return;
+//	if (!pSpawn->ActorInfo || !pSpawn->ActorInfo->ActorInstance)
+//		return;
+//	DWORD spawntype = GetSpawnType(pSpawn);
+//	//DebugSpew("SetNameSpriteTint(%s) spawntype = %d",pSpawn->Name,spawntype);
+//	//CActorEx *pActorEx=(CActorEx *)pSpawn->pActorInfo->pActorEx;
+//	DWORD NewColor = 0;
+//	switch (spawntype)
+//	{
+//	case NPC:
+//	{
+//		NewColor = 0x00FFFFFF;
+//		break;
+//	}
+//	default:
+//	{
+//		((EQPlayerHook*)EQ_POINTER_CDisplay)->SetNameSpriteTint_Trampoline(pSpawn);
+//		return;
+//	}
+//	}
+//	//7F9880
+//	//first call t3dGetDagSprite
+//	// then use that pointer as a param to SetNameColor
+//	//like this:
+//	 //.text:004B115E                 mov     eax, [edi+84h] ; /*0x084*/   struct  _ACTORINFO   *pActorInfo;
+//	/*.text:004B1164                 test    eax, eax
+//	.text:004B1166                 jz      loc_4B1434
+//	.text:004B116C                 mov     eax, [eax+288h]
+//	.text:004B1172                 test    eax, eax
+//	.text:004B1174                 jz      loc_4B1434
+//	.text:004B117A                 push    eax
+//	.text:004B117B                 call    __imp__t3dGetDagSprite
+//	*/
+//	DWORD dag = (DWORD)pSpawn->ActorInfo->DagHeadPoint;//mov     eax, [eax+288h]
+//	DWORD sprite = *(DWORD*)(dag + 0x8);
+//	//DebugSpew("%s pre oldcolor = %x newColor = %x",pSpawn->Name,*(DWORD*)(sprite+0x48),NewColor);
+//	*(DWORD*)(sprite + 0x48) = NewColor;
+//	//if we call this we mess up ebx... so instead we do what the asm does, see below (taken from EQGfx_Dx8.dll (2012-02-18 obviously hacked, i dont know original version...)
+//	//pActorEx->SetNameColor((DWORD *)sprite,(DWORD *)&NewColor);
+//	//DebugSpew("%s post oldcolor = %x newColor = %x",pSpawn->Name,*(DWORD*)(sprite+0x48),NewColor);
+//	/*s3dSetStringSpriteTint proc near
+//.text:10021700
+//.text:10021700 arg_0           = dword ptr  4
+//.text:10021700 arg_4           = dword ptr  8
+//.text:10021700
+//.text:10021700                 mov     eax, [esp+arg_4]
+//.text:10021704                 mov     edx, [esp+arg_0]
+//.text:10021708                 mov     ecx, [eax]
+//.text:1002170A                 xor     eax, eax
+//.text:1002170C                 mov     [edx+48h], ecx
+//.text:1002170F                 retn
+//.text:1002170F s3dSetStringSpriteTint endp
+//
+//*/
+//}
+//
+//#define EQPlayer__EQPlayer                                 0x506802
+//#define EQPlayer__dEQPlayer                                0x50723D
+//#define EQPlayer__DoAttack                                 0x50A0F8
+//#define EQPlayer__ChangeBoneStringSprite                   0x4B0AA8
+//#define EQPlayer__SetNameSpriteState                       0x4B0BD9
+//#define EQPlayer__SetNameSpriteTint                        0x4B114D
+//#define EQPlayer__GetPlayerFromName						   0x5081DB
+//// EQItemList 
+//#define EQItemList__EQItemList							   0x4EED9D
+//#define EQItemList__dEQItemList                            0x4EEE66
+//VOID InitializeMQ2Spawns()
+//{
+//	EzDetourSprite(EQPlayer__EQPlayer, &EQPlayerHook::EQPlayer_Detour, &EQPlayerHook::EQPlayer_Trampoline);
+//	EzDetourSprite(EQPlayer__dEQPlayer, &EQPlayerHook::dEQPlayer_Detour, &EQPlayerHook::dEQPlayer_Trampoline);
+//	EzDetourSprite(EQPlayer__SetNameSpriteState, &EQPlayerHook::SetNameSpriteState_Detour, &EQPlayerHook::SetNameSpriteState_Trampoline);
+//	EzDetourSprite(EQPlayer__SetNameSpriteTint, &EQPlayerHook::SetNameSpriteTint_Detour, &EQPlayerHook::SetNameSpriteTint_Trampoline);
+//	EzDetourSprite(EQPlayer__ChangeBoneStringSprite, &EQPlayerHook::ChangeBoneStringSprite_Detour, &EQPlayerHook::ChangeBoneStringSprite_Trampoline);
+//}
+//BOOL SetNameSpriteState(PEQSPAWNINFO pSpawn, bool Show)
+//{
+//	//DebugSpew("SetNameSpriteState(%s) --race %d body %d)",pSpawn->Name,pSpawn->Race,pSpawn->BodyType);
+//	if (!Show)
+//	{
+//		//ecx should be pinstCDisplay
+//		((EQPlayerHook*)EQ_POINTER_CDisplay)->SetNameSpriteState_Trampoline(pSpawn, Show);
+//	}
+//	//first arg for ChangeBoneStringSprite is edi+288 which is same as : pSpawn->pActorInfo->pActorTint
+//	//second is [pinstCDisplay+2E08h]
+//	//third arg is the string for sure!
+//	/*#define SetCaption(CaptionString) \
+//			{\
+//				if (CaptionString[0])\
+//				{\
+//					strcpy(NewCaption,CaptionString);\
+//					pNamingSpawn=pSpawn;\
+//					ParseMacroParameter(GetCharInfo()->pSpawn,NewCaption);\
+//					pNamingSpawn=0;\
+//					((EQPlayer*)pSpawn)->ChangeBoneStringSprite(pSpawn->pActorInfo->pActorTint,(T3D_DAG *)(*(DWORD *)(EQ_POINTER_CDisplay+0x2e08)),NewCaption);\
+//					return 1;\
+//				}\
+//			}*/
+//			//CHAR NewCaption[MAX_STRING]={0};
+//
+//			/*if (pSpawn->pActorInfo->pActorEx && !((CActorEx*)pSpawn->pActorInfo->pActorEx)->CanSetName(0))
+//			{
+//	//			DebugSpew("CanSetName==0 - %s .. race %d body %d",pSpawn->Name,pSpawn->Race,pSpawn->BodyType);
+//				return 1;
+//			};*/
+//
+//	switch (GetSpawnType(pSpawn))
+//	{
+//	case NPC:
+//		break;
+//	case PC:
+//		break;
+//	case CORPSE:
+//		break;
+//	case CHEST:
+//	case UNTARGETABLE:
+//	case TRAP:
+//	case TIMER:
+//	case TRIGGER:// trigger names make it crash!
+//		return 0;
+//	case MOUNT://mount names make it crash!
+//		return 0;
+//	case PET:
+//		break;
+//	}
+//	//		DebugSpew("Returning default from SetNameSpriteState");
+//			//ecx should be pinstCDisplay
+//	return ((EQPlayerHook*)EQ_POINTER_CDisplay)->SetNameSpriteState_Trampoline(pSpawn, Show);
+//	//#undef SetCaption
+//}
+//
+//VOID UpdateSpawnCaptions()
+//{
+//	//	DebugSpew("UpdateSpawnCaptions()");
+//	int distN = 0;
+//	int capCount = 0;
+//	for (; distN < 120; distN++)
+//	{
+//		if (PEQSPAWNINFO pSpawn = (PEQSPAWNINFO)EQP_DistArray[distN].VarPtr.Ptr) {
+//			if (pSpawn != (PEQSPAWNINFO)pTarget) {
+//				if (EQP_DistArray[distN].Value.Float <= 80.0f)
+//				{
+//					if (SetNameSpriteState(pSpawn, true))
+//					{
+//						SetNameSpriteTint(pSpawn);
+//						capCount++;
+//					}
+//				}
+//				else {
+//					return;
+//				}
+//			}
+//		}
+//	}
+//}
+//
+//VOID UpdateMQ2SpawnSort()
+//{
+//	int GameState = -1;
+//	GameState = GetGameState();
+//	if (GameState != GAMESTATE_INGAME)
+//		return;
+//
+//	ZeroMemory(EQP_DistArray, sizeof(EQP_DistArray));
+//
+//	gSpawnCount = 0;
+//	PEQSPAWNINFO pSpawn = (PEQSPAWNINFO)pSpawnList;
+//	while (pSpawn)
+//	{
+//		EQP_DistArray[gSpawnCount].VarPtr.Ptr = pSpawn;
+//		EQP_DistArray[gSpawnCount].Value.Float = GetDistance(pSpawn->X, pSpawn->Y);
+//		gSpawnCount++;
+//		pSpawn = pSpawn->Prev;
+//	}
+//	// quicksort!
+//	qsort(&EQP_DistArray[0], gSpawnCount, sizeof(MQRANK), MQRankFloatCompare);
+//	static unsigned long nCaptions = 100;
+//	static unsigned long LastTarget = 0;
+//	++nCaptions;
+//	if (LastTarget)
+//	{
+//		if (PEQSPAWNINFO pSpawn = (PEQSPAWNINFO)GetSpawnByID(LastTarget))
+//		{
+//			if (pSpawn != (PEQSPAWNINFO)pTarget)
+//			{
+//				SetNameSpriteState(pSpawn, false);
+//			}
+//		}
+//		LastTarget = 0;
+//	}
+//	if (GameState == GAMESTATE_INGAME && nCaptions > 7)
+//	{
+//		nCaptions = 0;
+//		UpdateSpawnCaptions();
+//	}
+//	if (pTarget)
+//	{
+//		LastTarget = ((PEQSPAWNINFO)pTarget)->SpawnId;
+//		((EQPlayerHook*)EQ_POINTER_CDisplay)->SetNameSpriteTint_Trampoline((PEQSPAWNINFO)pTarget);
+//	}
+//}
+//
+//PEQSPAWNINFO GetSpawnByID(DWORD dwSpawnID)
+//{
+//	if (dwSpawnID < 5000)
+//		return ppEQP_IDArray[dwSpawnID];
+//	return 0;
+//}

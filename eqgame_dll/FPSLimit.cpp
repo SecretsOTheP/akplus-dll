@@ -6,11 +6,8 @@ HWND EQhWnd = 0;
 HMODULE heqwMod = 0;
 DWORD heqwModoff = 0;
 DWORD gFG_MAX=60;
-DWORD gBG_MAX=30;
-DWORD gML_MAX = 0;
 DWORD SleepFG = 16;
 DWORD SleepBG = 32;
-DWORD SleepML = 0;
 DWORD CurMax = 0;
 #define FRAME_COUNT 32
 DWORD FrameArray[FRAME_COUNT + 1] = { 0 };
@@ -53,29 +50,11 @@ void LoadIniSettings()
 		WritePrivateProfileStringA("Options", "MaxFPS", szDefault, "./eqclient.ini");
 	}
 	gFG_MAX = atoi(szResult);
+
 	if (gFG_MAX > 0)
 		SleepFG = (int)(1000.0f / (float)gFG_MAX);
-	sprintf(szDefault, "%d", 30);
-	error = GetPrivateProfileString("Options",  "MaxBGFPS", szDefault, szResult, 255, "./eqclient.ini");
-	if (GetLastError())
-	{	
-		WritePrivateProfileStringA("Options", "MaxBGFPS", szDefault, "./eqclient.ini");
-	}
-	gBG_MAX = atoi(szResult);
-	if (gBG_MAX > 0)
-		SleepBG = (int)(1000.0f / (float)gBG_MAX);
 
-	sprintf(szDefault, "%d", gFG_MAX);
-	error = GetPrivateProfileString("Options", "MaxMouseLookFPS", szDefault, szResult, 255, "./eqclient.ini");
-	if (GetLastError())
-	{
-		WritePrivateProfileStringA("Options", "MaxMouseLookFPS", szDefault, "./eqclient.ini");
-	}
-	gML_MAX = atoi(szResult);
-	if (gML_MAX > 0)
-		SleepML = (int)(1000.0f / (float)gML_MAX);
-
-	if (gBG_MAX <= 0 && gFG_MAX <= 0 && gML_MAX <= 0)
+	if (gFG_MAX <= 0)
 		frame_limiter = false;
 	// turn on chat keepalive
 	sprintf(szDefault, "%d", 1);
@@ -176,9 +155,8 @@ bool mouse_looking = false;
 void Pulse()
 {
 	*(DWORD*)0x008063D0 = 0;
-	if (!frame_limiter)
-		return;
-	ProcessFrame();
+	
+	//ProcessFrame();
 
 	if (*(DWORD *)0x007985EA == 0x00010001) {
 		mouse_looking = true;
@@ -190,14 +168,8 @@ void Pulse()
 
 	SetEQhWnd();
 
-	if (GetForegroundWindow() == EQhWnd) {
+	/*if (GetForegroundWindow() == EQhWnd) {
 		CurMax = gFG_MAX;
-		if (mouse_looking) {
-			CurMax = gML_MAX;
-		}
-	}
-	else {
-		CurMax = gBG_MAX;
 	}
 	if (CurMax > 0) {
 		int SleepTime = (int)(1000.0f / (float)CurMax);
@@ -217,7 +189,7 @@ void Pulse()
 		if (SleepTime > 0)
 			Sleep(SleepTime);
 		LastSleep = SleepTime;
-	}
+	}*/
 
 
 
