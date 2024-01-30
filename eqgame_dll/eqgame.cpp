@@ -1461,12 +1461,15 @@ int __cdecl s3dSetStringSpriteYonClip_Detour(intptr_t sprite, int a2, float dist
 
 typedef unsigned __int64(__cdecl *_GetCpuSpeed2)();
 typedef float (__cdecl *_FastMathFunction)(float);
+typedef float(__cdecl *_CalculateAccurateCoefficientsFromHeadingPitchRoll)(float, float, float, float);
 
 typedef float(__cdecl *_FastAngleArcFunction)(DWORD, DWORD, DWORD);
 
 _FastMathFunction GetFastCosine_Trampoline;
 _FastMathFunction GetFastSine_Trampoline;
 _FastMathFunction GetFastCotangent_Trampoline;
+_CalculateAccurateCoefficientsFromHeadingPitchRoll CalculateCoefficientsFromHeadingPitchRoll_Trampoline;
+_CalculateAccurateCoefficientsFromHeadingPitchRoll CalculateHeadingPitchRollFromCoefficients_Trampoline;
 _FastAngleArcFunction GetFactAngleArcFunction;
 _GetCpuSpeed2 GetCpuSpeed1_Trampoline;
 _GetCpuSpeed2 GetCpuSpeed2_Trampoline;
@@ -1483,9 +1486,7 @@ unsigned __int64 __stdcall GetCpuTicks_Detour() {
 }
 
 unsigned __int64 __stdcall GetCpuSpeed2_Detour() {
-		unsigned __int64 v0; // rbx
-		int v2; // [rsp+20h] [rbp-48h] BYREF
-		LARGE_INTEGER Frequency; // [rsp+70h] [rbp+8h] BYREF
+		LARGE_INTEGER Frequency;
 
 		if (!QueryPerformanceFrequency(&Frequency))
 		{
@@ -1502,7 +1503,8 @@ DWORD org_nonFastCos = 0;
 DWORD org_nonFastSin = 0;
 DWORD org_nonFastCotangent = 0;
 DWORD org_fix16Tangent = 0;
-
+DWORD org_calculateAccurateCoefficientsFromHeadingPitchRoll = 0;
+DWORD org_calculateAccurateHeadingPitchRollFromCoefficients = 0;
 float __cdecl t3dFastCosine_Detour(float a1) {
 
 	if (org_nonFastCos)
@@ -1531,6 +1533,26 @@ float __cdecl t3dFastCotangent_Detour(float a1) {
 	}
 
 	return GetFastCotangent_Trampoline(a1);
+}
+
+float CalculateCoefficientsFromHeadingPitchRoll_Detour(float a1, float a2, float a3, float a4) {
+
+	if (org_calculateAccurateCoefficientsFromHeadingPitchRoll)
+	{
+		return ((float(__cdecl*) (float, float, float, float))org_calculateAccurateCoefficientsFromHeadingPitchRoll)(a1, a2, a3, a4);
+	}
+
+	return CalculateCoefficientsFromHeadingPitchRoll_Trampoline(a1, a2, a3, a4);
+}
+
+float CalculateHeadingPitchRollFromCoefficients_Detour(float a1, float a2, float a3, float a4) {
+
+	if (org_calculateAccurateHeadingPitchRollFromCoefficients)
+	{
+		return ((float(__cdecl*) (float, float, float, float))org_calculateAccurateHeadingPitchRollFromCoefficients)(a1, a2, a3, a4);
+	}
+
+	return CalculateHeadingPitchRollFromCoefficients_Trampoline(a1, a2, a3, a4);
 }
 
 //float __cdecl t3dAngleArcTangentFloat_Detour(DWORD a1, DWORD a2, DWORD a3) {
@@ -2226,11 +2248,25 @@ void InitHooks()
 			{
 				(_FastMathFunction)GetFastCotangent_Trampoline = (_FastMathFunction)DetourFunction((PBYTE)ot3dFastCotangent, (PBYTE)t3dFastCotangent_Detour);
 			}
+
+			_CalculateAccurateCoefficientsFromHeadingPitchRoll ot3dCalculateCoefficientsFromHeadingPitchRoll = (_CalculateAccurateCoefficientsFromHeadingPitchRoll)GetProcAddress(heqGfxMod, "t3dCalculateCoefficientsFromHeadingPitchRoll");
+			if (ot3dCalculateCoefficientsFromHeadingPitchRoll)
+			{
+				(_CalculateAccurateCoefficientsFromHeadingPitchRoll)CalculateCoefficientsFromHeadingPitchRoll_Trampoline = (_CalculateAccurateCoefficientsFromHeadingPitchRoll)DetourFunction((PBYTE)ot3dCalculateCoefficientsFromHeadingPitchRoll, (PBYTE)CalculateCoefficientsFromHeadingPitchRoll_Detour);
+			}
+
+			_CalculateAccurateCoefficientsFromHeadingPitchRoll ot3dCCalculateHeadingPitchRollFromCoefficients = (_CalculateAccurateCoefficientsFromHeadingPitchRoll)GetProcAddress(heqGfxMod, "t3dCalculateHeadingPitchRollFromCoefficients");
+			if (ot3dCCalculateHeadingPitchRollFromCoefficients)
+			{
+				(_CalculateAccurateCoefficientsFromHeadingPitchRoll)CalculateHeadingPitchRollFromCoefficients_Trampoline = (_CalculateAccurateCoefficientsFromHeadingPitchRoll)DetourFunction((PBYTE)ot3dCCalculateHeadingPitchRollFromCoefficients, (PBYTE)CalculateHeadingPitchRollFromCoefficients_Detour);
+			}
 			//org_fix16Tangent = (DWORD)GetProcAddress(heqGfxMod, "t3dAngleArcTangentFix16");
 
 			org_nonFastCos = (DWORD)GetProcAddress(heqGfxMod, "t3dFloatCosine");
 			org_nonFastSin = (DWORD)GetProcAddress(heqGfxMod, "t3dFloatSine");
 			org_nonFastCotangent = (DWORD)GetProcAddress(heqGfxMod, "t3dFloatCotangent");
+			org_calculateAccurateCoefficientsFromHeadingPitchRoll = (DWORD)GetProcAddress(heqGfxMod, "t3dCalculateAccurateCoefficientsFromHeadingPitchRoll");
+			org_calculateAccurateHeadingPitchRollFromCoefficients = (DWORD)GetProcAddress(heqGfxMod, "t3dCalculateAccurateHeadingPitchRollFromCoefficients");
 			//_FastMathFunction ot3dFastCotangent = (_FastMathFunction)GetProcAddress(heqGfxMod, "t3dFloatFastCotangent");
 			//if (ot3dFastCotangent)
 			//{
