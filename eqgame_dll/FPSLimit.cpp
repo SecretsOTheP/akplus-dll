@@ -49,6 +49,7 @@ void LoadIniSettings()
 	{
 		WritePrivateProfileStringA("Options", "MaxFPS", szDefault, "./eqclient.ini");
 	}
+
 	gFG_MAX = atoi(szResult);
 
 	if (gFG_MAX > 0)
@@ -59,6 +60,13 @@ void LoadIniSettings()
 	// turn on chat keepalive
 	sprintf(szDefault, "%d", 1);
 	WritePrivateProfileStringA("Defaults", "ChatKeepAlive", szDefault, "./eqclient.ini");
+	sprintf(szDefault, "%d", 0);
+	error = GetPrivateProfileStringA("Options", "NoFPSLimiter", szDefault, szResult, 255, "./eqclient.ini");
+	if (GetLastError())
+	{
+		WritePrivateProfileStringA("Options", "NoFPSLimiter", szDefault, "./eqclient.ini");
+	}
+	frame_limiter = (bool)atoi(szResult);
 }
 
 void SetEQhWnd()
@@ -155,8 +163,6 @@ bool mouse_looking = false;
 void Pulse()
 {
 	*(DWORD*)0x008063D0 = 0;
-	
-	//ProcessFrame();
 
 	if (*(DWORD *)0x007985EA == 0x00010001) {
 		mouse_looking = true;
@@ -168,7 +174,14 @@ void Pulse()
 
 	SetEQhWnd();
 
-	/*if (GetForegroundWindow() == EQhWnd) {
+
+	if (!frame_limiter)
+		return;
+
+	ProcessFrame();
+
+
+	if (GetForegroundWindow() == EQhWnd) {
 		CurMax = gFG_MAX;
 	}
 	if (CurMax > 0) {
@@ -189,7 +202,7 @@ void Pulse()
 		if (SleepTime > 0)
 			Sleep(SleepTime);
 		LastSleep = SleepTime;
-	}*/
+	}
 
 
 

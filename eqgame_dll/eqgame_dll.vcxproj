@@ -43,7 +43,7 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <LinkIncremental>false</LinkIncremental>
+    <LinkIncremental>true</LinkIncremental>
     <TargetName>eqgame</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -74,7 +74,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>..\Detours\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <OutputFile>$(OutDir)eqgame.dll</OutputFile>
+      <OutputFile>C:\Users\espau\Downloads\TAKP PC V2.1\eqgame.dll</OutputFile>
       <SuppressStartupBanner>false</SuppressStartupBanner>
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
@@ -105,6 +105,7 @@
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalLibraryDirectories>..\detours\lib</AdditionalLibraryDirectories>
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>C:\Users\espau\Downloads\TAKP PC V2.1\eqgame.dll</OutputFile>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
