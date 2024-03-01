@@ -1718,33 +1718,6 @@ int __cdecl ProcessKeyDown_Detour(int a1)
 		return ProcessKeyDown_Trampoline(0x00); // null
 	}
 
-
-	PEQSPAWNINFO playerSpawn = (PEQSPAWNINFO)EQ_OBJECT_PlayerSpawn;
-	int key = a1;
-	if (EQ_IsNotTypingInChat() == true)
-	{
-		if (EQ_IsKeyPressedControl() == false && EQ_IsKeyPressedAlt() == false && EQ_IsKeyPressedShift() == false)
-		{
-			if (key == EQ_KEY_UP_ARROW || key == EQ_KEY_DOWN_ARROW || key == EQ_KEY_LEFT_ARROW || key == EQ_KEY_RIGHT_ARROW ||
-				key == EQ_KEY_W || key == EQ_KEY_S || key == EQ_KEY_A || key == EQ_KEY_D)
-			{
-				if (EQ_OBJECT_CLootWnd && EQ_OBJECT_CLootWnd->CSidlWnd.EQWnd.IsOpen == 1 && EQ_OBJECT_CLootWnd->CSidlWnd.EQWnd.IsVisible == 1) {
-					EQ_CLASS_CLootWnd->Deactivate();
-				}
-				else {
-
-					if (EQ_OBJECT_CSpellBookWnd && EQ_OBJECT_CSpellBookWnd->CSidlWnd.EQWnd.IsVisible == 0)
-					{
-						if (playerSpawn != NULL && playerSpawn->StandingState == EQ_STANDING_STATE_SITTING)
-						{
-							((EQPlayer*)playerSpawn)->ChangePosition(EQ_STANDING_STATE_STANDING);
-						}
-					}
-				}
-			}
-		}
-	}
-
 	return ProcessKeyDown_Trampoline(a1);
 }
 

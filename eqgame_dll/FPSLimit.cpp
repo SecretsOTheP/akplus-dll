@@ -60,7 +60,6 @@ void LoadIniSettings()
 	// turn on chat keepalive
 	sprintf(szDefault, "%d", 1);
 	WritePrivateProfileStringA("Defaults", "ChatKeepAlive", szDefault, "./eqclient.ini");
-	sprintf(szDefault, "%d", 0);
 	error = GetPrivateProfileStringA("Options", "NoFPSLimiter", szDefault, szResult, 255, "./eqclient.ini");
 	if (GetLastError())
 	{
