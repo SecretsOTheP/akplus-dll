@@ -1732,7 +1732,7 @@ DWORD WINAPI GetModuleFileNameA_detour(HMODULE hMod,LPTSTR outstring,DWORD nSize
 			PCHAR szProcessName = 0;
 			szProcessName = strrchr(outstring,'\\');
 			szProcessName[0] = '\0';
-			sprintf_s(outstring,allocsize,"%s\\eqmac.exe",outstring);
+			sprintf_s(outstring,allocsize,"%s\\eqgame.dll",outstring);
 		}
 	}
 	return ret;
