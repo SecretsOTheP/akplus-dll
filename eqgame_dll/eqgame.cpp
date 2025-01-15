@@ -10,11 +10,11 @@
 #include <dxgi.h>
 #include <ctime>
 #include <iostream>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <iomanip>
-
 #include <random>
-#include <iostream>
 
 #define BYTEn(x, n) (*((BYTE*)&(x)+n))
 #define BYTE1(x) BYTEn(x, 0)
@@ -711,6 +711,7 @@ DETOUR_TRAMPOLINE_EMPTY(int __cdecl ProcessKeyDown_Trampoline(int));
 DETOUR_TRAMPOLINE_EMPTY(int __cdecl ProcessKeyUp_Trampoline(int));
 DETOUR_TRAMPOLINE_EMPTY(unsigned __int64 __stdcall GetCpuTicks2_Trampoline());
 DETOUR_TRAMPOLINE_EMPTY(int __cdecl do_quit_Trampoline(int, int));
+DETOUR_TRAMPOLINE_EMPTY(int __cdecl CityCanStart_Trampoline(int, int, int, int));
 DETOUR_TRAMPOLINE_EMPTY(LRESULT WINAPI WndProc_Trampoline(HWND, UINT, WPARAM, LPARAM));
 DETOUR_TRAMPOLINE_EMPTY(void WINAPI RightMouseDown_Trampoline(__int16, __int16));
 DETOUR_TRAMPOLINE_EMPTY(void WINAPI RightMouseUp_Trampoline(__int16, __int16));
@@ -1422,6 +1423,14 @@ void PatchSaveBypass()
 
 	const char test14[] = { 0xEB, 0x1A };
 	PatchA((DWORD*)0x42D14D, &test14, sizeof(test14));
+
+	//Changes the limit to 0x3E8 (1000) on race animations.
+	const char test15[] = { 0xE8, 0x03 };
+	PatchA((DWORD*)0x004AE612, &test15, sizeof(test15));
+
+	//Changes the limit to 0x3E8 (1000) on race animations.
+	const char test16[] = { 0xE8, 0x03 };
+	PatchA((DWORD*)0x4d93c5, &test16, sizeof(test16));
 }
 
 typedef int(__cdecl *_s3dSetStringSpriteYonClip)(intptr_t, int, float);
@@ -1614,6 +1623,178 @@ int __cdecl do_quit_Detour(int a1, int a2) {
 		}
 	}
 	return do_quit_Trampoline(a1, a2);
+}
+typedef int(__thiscall* EQ_FUNCTION_TYPE_EQPlayer__LegalPlayerRace)(void* this_ptr, int a3);
+EQ_FUNCTION_TYPE_EQPlayer__LegalPlayerRace LegalPlayerRace_Trampoline;
+int __fastcall LegalPlayerRace_Detour(void* this_ptr, void* not_used, int a3) {
+	if (a3 == 26)
+	{
+		return 1;
+	}
+	return LegalPlayerRace_Trampoline(this_ptr, a3);
+}
+
+#define EQZoneInfo_AddZoneInfo 0x00523AEB
+#define EQZoneInfo_AddZoneInfo 0x00523AEB
+
+// Define a structure to store a row of CSV data
+struct CSVRow {
+	std::vector<std::string> columns;
+};
+
+// Utility function to parse a CSV file and key rows by index
+std::vector<CSVRow> parseCSVWithIndex(const std::string& filePath) {
+	std::vector<CSVRow> data;
+	std::ifstream file(filePath);
+
+	if (!file.is_open()) {
+		return data;
+	}
+
+	std::string line;
+	while (std::getline(file, line)) {
+		CSVRow row;
+		std::stringstream lineStream(line);
+		std::string cell;
+
+		while (std::getline(lineStream, cell, '^')) {
+			row.columns.push_back(cell);
+		}
+
+		data.push_back(row);
+	}
+
+	file.close();
+	return data;
+}
+
+
+
+typedef int(__thiscall* EQ_FUNCTION_TYPE_EQZoneInfo__EQZoneInfo)(void* this_ptr);
+EQ_FUNCTION_TYPE_EQZoneInfo__EQZoneInfo EQZoneInfo_Ctor_Trampoline;
+int __fastcall EQZoneInfo_Ctor_Detour(void* this_ptr, void* not_used) {
+	int ctor_result = EQZoneInfo_Ctor_Trampoline(this_ptr);
+
+	auto data = parseCSVWithIndex("ZoneData.txt");
+
+	if (data.size())
+	{
+		for (auto& entry : data)
+		{
+			std::vector<std::string>& column = entry.columns;
+			if (column.size() == 7)
+			{
+				if (column[0].empty())
+					continue;
+				else if (column[1].empty())
+					continue;
+				else if (column[2].empty())
+					continue;
+				else if (column[3].empty())
+					continue;
+				else if (column[4].empty())
+					continue;
+				else if (column[5].empty())
+					continue;
+				else if (column[6].empty())
+					continue;
+
+				unsigned int zoneIdNum = std::atoi(column[0].c_str());
+				const char* zoneShortName = column[1].c_str();
+				const char* zoneLongName = column[2].c_str();
+				unsigned int zoneUnk = std::atoi(column[3].c_str());
+				unsigned int zoneUnk2 = std::atoi(column[4].c_str());
+				unsigned int zoneUnk3 = std::atoi(column[5].c_str());
+				unsigned int zoneUnk4 = std::atoi(column[6].c_str());
+
+				((int(__thiscall*) (LPVOID, int, int, const char*, const char*, int, unsigned long, int, int)) EQZoneInfo_AddZoneInfo) (this_ptr, 0, zoneIdNum, zoneShortName, zoneLongName, zoneUnk, zoneUnk2, zoneUnk3, zoneUnk4);
+			}
+		}
+	}
+
+	/*((int(__thiscall*) (LPVOID, int, int, const char*, const char*, int, unsigned long, int, int)) EQZoneInfo_AddZoneInfo) (this_ptr, 0, 224, "gunthak", "Gulf of Gunthak", 4048, 4, 0, 0);
+	((int(__thiscall*) (LPVOID, int, int, const char*, const char*, int, unsigned long, int, int)) EQZoneInfo_AddZoneInfo) (this_ptr, 0, 225, "dulak", "Dulak's Harbor", 4049, 4, 0, 0);
+	((int(__thiscall*) (LPVOID, int, int, const char*, const char*, int, unsigned long, int, int)) EQZoneInfo_AddZoneInfo) (this_ptr, 0, 229, "guka", "The Citadel of Guk", 2247, 7, 0, 0);*/
+
+	return ctor_result;
+}
+
+
+// Function to read a CSV file and store the data in a vector of pairs
+std::vector<std::pair<std::string, std::string>> readChrTextFile(const std::string& filePath) {
+	std::vector<std::pair<std::string, std::string>> data;
+	std::ifstream inputFile = std::ifstream(filePath);
+
+	if (!inputFile.is_open()) {
+		std::cerr << "Error: Could not open file " << filePath << std::endl;
+		return data;
+	}
+
+	std::string line;
+	// Skip the first line containing the number of entries
+	if (std::getline(inputFile, line)) {
+		// First line read but not processed
+	}
+
+	// Read the remaining lines
+	while (std::getline(inputFile, line)) {
+		std::istringstream lineStream(line);
+		std::string first, second;
+
+		if (std::getline(lineStream, first, ',') && std::getline(lineStream, second)) {
+			data.emplace_back(first, second);
+		}
+		else {
+			std::cerr << "Error: Malformed line \"" << line << "\"" << std::endl;
+		}
+	}
+
+	inputFile.close();
+	return data;
+}
+
+//typedef int(__thiscall* EQ_FUNCTION_TYPE_CDisplay_InitWorld)(void* this_ptr);
+//EQ_FUNCTION_TYPE_CDisplay_InitWorld EQZoneInfo_CDisplay_InitWorld;
+//int __fastcall EQZoneInfo_CDisplay_InitWorld(void* this_ptr, void* not_used, char* a2, char* a3, int a4, int a5, int a6) {
+//	if (a4 == 1 && a2)
+//	{
+//		std::string zoneName = a2;
+//		zoneName += ".chr.txt";
+//		auto data = readChrTextFile(a2);
+//		for (auto& pair : data)
+//		{
+//			((int(__thiscall*) (LPVOID, a2, a3, int, int, int)) 0x004A7D62) (this_ptr, pair.second.c_str(), pair.second.c_str()))
+//		}
+//	}
+//}
+
+struct RaceData {
+	BYTE gender = 0;
+	std::string code;
+};
+
+std::map<unsigned int, RaceData> raceIdToCodeMap;
+
+typedef int(__thiscall* EQ_FUNCTION_TYPE_EQPlayer_GetActorTag)(void* this_ptr, char* a2);
+EQ_FUNCTION_TYPE_EQPlayer_GetActorTag EQPlayer_GetActorTag_Trampoline;
+int __fastcall EQPlayer_GetActorTag_Detour(void* this_ptr, void* not_used, char* a2) {
+	int res = EQPlayer_GetActorTag_Trampoline(this_ptr, a2);
+	WORD ourRace = *(WORD*)((int)this_ptr + 0xAA);
+	BYTE ourGender = *(BYTE*)((int)this_ptr + 0xAC);
+
+	std::map<unsigned int, RaceData>::iterator it = raceIdToCodeMap.find(ourRace);
+	if (it != raceIdToCodeMap.end())
+	{
+		if (it->second.gender == ourGender)
+		{
+			strcpy(a2, it->second.code.c_str());
+		}
+	}
+	return res;
+}
+
+int __cdecl CityCanStart_Detour(int a1, int a2, int a3, int a4) {
+	return CityCanStart_Trampoline(a1, a2, a3, a4);
 }
 
 int __cdecl ProcessKeyUp_Detour(int a1)
@@ -1944,6 +2125,38 @@ signed int __cdecl ProcessMouseEvent_Hook()
 	return ret;
 }
 
+void InitRaceShortCodeMap()
+{
+	raceIdToCodeMap.clear();
+	auto parsedMap = parseCSVWithIndex("RaceData.txt");
+	if (parsedMap.size())
+	{
+		for (auto& entry : parsedMap)
+		{
+			std::vector<std::string>& column = entry.columns;
+			if (column.size() == 3)
+			{
+				if (column[0].empty())
+					continue;
+				else if (column[1].empty())
+					continue;
+				else if (column[2].empty())
+					continue;
+
+				unsigned int raceIdNum = std::atoi(column[0].c_str());
+				unsigned int genderIdNum = std::atoi(column[1].c_str());
+				std::string raceCodeId = column[2];
+
+				RaceData rData;
+				rData.gender = genderIdNum;
+				rData.code = raceCodeId;
+
+				raceIdToCodeMap.emplace(raceIdNum, rData);
+			}
+		}
+	}
+}
+
 /*signed int __cdecl SetMouseCenter_Hook()//55B722
 {
 	signed int retval = return_SetMouseCenter();
@@ -1995,6 +2208,11 @@ int __fastcall EQMACMQ_DETOUR_CEverQuest__InterpretCmd(void* this_ptr, void* not
 	if (strcmp(a2, "/rfps") == 0) {
 		LoadIniSettings();
 
+		return EQMACMQ_REAL_CEverQuest__InterpretCmd(this_ptr, NULL, NULL);
+	}
+
+	if (strcmp(a2, "/rnpcdata") == 0) {
+		InitRaceShortCodeMap();
 		return EQMACMQ_REAL_CEverQuest__InterpretCmd(this_ptr, NULL, NULL);
 	}
 
@@ -2063,6 +2281,7 @@ int __fastcall EQMACMQ_DETOUR_CEverQuest__InterpretCmd(void* this_ptr, void* not
 
 	return EQMACMQ_REAL_CEverQuest__InterpretCmd(this_ptr, a1, a2);
 }
+
 
 int __cdecl SendExeChecksum_Detour()
 {
@@ -2262,8 +2481,11 @@ void InitHooks()
 	EQMACMQ_REAL_CBuffWindow__RefreshBuffDisplay = (EQ_FUNCTION_TYPE_CBuffWindow__RefreshBuffDisplay)DetourFunction((PBYTE)EQ_FUNCTION_CBuffWindow__RefreshBuffDisplay, (PBYTE)EQMACMQ_DETOUR_CBuffWindow__RefreshBuffDisplay);
 	EQMACMQ_REAL_CBuffWindow__PostDraw = (EQ_FUNCTION_TYPE_CBuffWindow__PostDraw)DetourFunction((PBYTE)EQ_FUNCTION_CBuffWindow__PostDraw, (PBYTE)EQMACMQ_DETOUR_CBuffWindow__PostDraw);
 	EQMACMQ_REAL_EQ_Character__CastSpell = (EQ_FUNCTION_TYPE_EQ_Character__CastSpell)DetourFunction((PBYTE)EQ_FUNCTION_EQ_Character__CastSpell, (PBYTE)EQMACMQ_DETOUR_EQ_Character__CastSpell);
-
 	heqwMod = GetModuleHandle("eqw.dll");
+	LegalPlayerRace_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__LegalPlayerRace)DetourFunction((PBYTE)0x0050BD9D, (PBYTE)LegalPlayerRace_Detour);
+	EQZoneInfo_Ctor_Trampoline = (EQ_FUNCTION_TYPE_EQZoneInfo__EQZoneInfo)DetourFunction((PBYTE)0x005223C6, (PBYTE)EQZoneInfo_Ctor_Detour);
+	EQPlayer_GetActorTag_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer_GetActorTag)DetourFunction((PBYTE)0x0050845D, (PBYTE)EQPlayer_GetActorTag_Detour);
+
 
 	return_ProcessMouseEvent = (ProcessGameEvents_t)DetourFunction((PBYTE)o_MouseEvents, (PBYTE)ProcessMouseEvent_Hook);
 	//return_SetMouseCenter = (ProcessGameEvents_t)DetourFunction((PBYTE)o_MouseCenter, (PBYTE)SetMouseCenter_Hook);
@@ -2378,6 +2600,7 @@ void InitHooks()
 	sprintf(szDefault, "%d", 1);
 	WritePrivateProfileStringA_tramp("Defaults", "ChatKeepAlive", szDefault, "./eqclient.ini");
 	CheckClientMiniMods();
+	InitRaceShortCodeMap();
 	bInitalized=true;
 }
 
