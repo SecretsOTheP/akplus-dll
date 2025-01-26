@@ -25,6 +25,8 @@ constexpr unsigned int SpawnAppearanceType_ClientDllMessage = 256;
 void SendCustomSpawnAppearanceMessage(unsigned __int16 feature_id, unsigned __int16 feature_value, bool is_request);
 
 // Song Window Support
+__declspec(dllexport) class CShortBuffWindow* GetShortDurationBuffWindow();
+
 struct _EQBUFFINFO* GetStartBuffArray(class CBuffWindow* window);
 int GetStartBuffIndex(class CBuffWindow* window);
 void SetTemporaryBuffOffset(int offset);

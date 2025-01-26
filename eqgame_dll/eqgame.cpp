@@ -64,6 +64,7 @@ DWORD o_MouseCenter = 0x0055B722;
 
 bool g_bEnableBrownSkeletons = false;
 bool g_bEnableExtendedNameplates = true;
+bool g_bSongWindowAutoHide = false;
 bool auto_login = false;
 char UserName[64];
 char PassWord[64];
@@ -158,7 +159,6 @@ void WriteLog(std::string logstring) {
 }
 #endif // !LOGGING
 
-#ifdef PRINTCHAT
 typedef void(__thiscall* PrintChat)(int this_ptr, const char* data, short color, bool un);
 void print_chat(const char* format, ...)
 {
@@ -170,7 +170,6 @@ void print_chat(const char* format, ...)
 	va_end(argptr);
 	print_chat_internal(*(int*)0x809478, buffer, 0, true);
 }
-#endif // !PRINTCHAT
 
 void __cdecl ResetMouseFlags() {
 #ifdef LOGGING
@@ -1117,6 +1116,7 @@ void __fastcall EQMACMQ_DETOUR_CBuffWindow__RefreshBuffDisplay(CBuffWindow* this
 	SetTemporaryBuffOffset(startBuffIndex);
 	EQMACMQ_REAL_CBuffWindow__RefreshBuffDisplay(this_ptr);
 	SetTemporaryBuffOffset(0);
+	int num_buffs = 0;
 
 	// -- Standard Dll Support Buff Text / Timer --
 	for (size_t i = 0; i < EQ_NUM_BUFFS; i++)
@@ -1124,10 +1124,11 @@ void __fastcall EQMACMQ_DETOUR_CBuffWindow__RefreshBuffDisplay(CBuffWindow* this
 		EQBUFFINFO& buff = buffs[i];
 		int spellId = buff.SpellId;
 
-		if (spellId == EQ_SPELL_ID_NULL)
+		if (spellId == EQ_SPELL_ID_NULL || buff.BuffType == 0)
 		{
 			continue;
 		}
+		num_buffs++;
 
 		int buffTicks = buff.Ticks;
 
@@ -1147,6 +1148,17 @@ void __fastcall EQMACMQ_DETOUR_CBuffWindow__RefreshBuffDisplay(CBuffWindow* this
 			_snprintf_s(buffTimeText, sizeof(buffTimeText), _TRUNCATE, " (%s)", buffTickTimeText);
 
 			EQ_CXStr_Append(&buffButtonWnd->CSidlWnd.EQWnd.ToolTipText, buffTimeText);
+		}
+	}
+
+	if (g_bSongWindowAutoHide && this_ptr == GetShortDurationBuffWindow()) {
+		if (num_buffs == 0) {
+			if (this_ptr->IsVisibile()) {
+				this_ptr->Show(0, 1);
+			}
+		}
+		else if (!this_ptr->IsVisibile()) {
+			this_ptr->Show(1, 1);
 		}
 	}
 };
@@ -2390,6 +2402,16 @@ int __fastcall EQMACMQ_DETOUR_CEverQuest__InterpretCmd(void* this_ptr, void* not
 		return EQMACMQ_REAL_CEverQuest__InterpretCmd(this_ptr, NULL, NULL);
 	}
 
+	if (strcmp(a2, "/songs") == 0) {
+		g_bSongWindowAutoHide = !g_bSongWindowAutoHide;
+		WritePrivateProfileStringA_tramp("Defaults", "SongWindowAutoHide", g_bSongWindowAutoHide ? "TRUE" : "FALSE", "./eqclient.ini");
+		print_chat("Song Window auto-hide: %s.", g_bSongWindowAutoHide ? "ON" : "OFF");
+		if (!g_bSongWindowAutoHide && GetShortDurationBuffWindow() && !GetShortDurationBuffWindow()->IsVisibile()) {
+			GetShortDurationBuffWindow()->Show(1, 1);
+		}
+		return 0;
+	}
+
 	else if ((strcmp(a2, "/raiddump") == 0) || (strcmp(a2, "/outputfile raid") == 0)) {
 		// beginning of raid structure
 		DWORD raid_ptr = 0x007914D0;
@@ -2972,10 +2994,10 @@ _EQBUFFINFO* __fastcall EQCharacter__FindAffectSlot_Detour(EQCHARINFO* player, i
 // ---------------------------------------------------------
 
 _EQBUFFINFO* GetStartBuffArray(CBuffWindow* window) {
-	return window == ShortBuffWindow ? EQ_OBJECT_CharInfo->BuffsExt : EQ_OBJECT_CharInfo->Buff;
+	return window == GetShortDurationBuffWindow() ? EQ_OBJECT_CharInfo->BuffsExt : EQ_OBJECT_CharInfo->Buff;
 }
 int GetStartBuffIndex(class CBuffWindow* window) {
-	return window == ShortBuffWindow ? EQ_NUM_BUFFS : 0;
+	return window == GetShortDurationBuffWindow() ? EQ_NUM_BUFFS : 0;
 }
 void SetTemporaryBuffOffset(int offset) {
 	ShortBuffSupport_BuffOffset = offset;
@@ -3032,6 +3054,10 @@ int __fastcall CBuffWindow__WndNotification_Detour(CBuffWindow* self, int unused
 		}
 	}
 	return CSidlScreenWnd::WndNotification(self, sender, type, a4);
+}
+
+CShortBuffWindow* GetShortDurationBuffWindow() {
+	return ShortBuffWindow;
 }
 
 void ShortBuffWindow_InitUI(CDisplay* cdisplay) {
@@ -3175,6 +3201,21 @@ void CheckClientMiniMods()
 		EzDetour(0x00550AF8, &Eqmachooks::CEQMusicManager__Set_Detour, &Eqmachooks::CEQMusicManager__Set_Trampoline);
 		EzDetour(0x004D54C1, &Eqmachooks::CEQMusicManager__Play_Detour, &Eqmachooks::CEQMusicManager__Play_Trampoline);
 		//EzDetour(0x004D518B, &Eqmachooks::CEQMusicManager__WavPlay_Detour, &Eqmachooks::CEQMusicManager__WavPlay_Trampoline);
+	}
+
+	error = GetPrivateProfileStringA("Defaults", "SongWindowAutoHide", szDefault, szResult, 255, "./eqclient.ini");
+	if (strcmp(szResult, "TRUE") == 0) // True
+	{
+		g_bSongWindowAutoHide = true;
+	}
+	else if (strcmp(szResult, "NONE") == 0) // Not found
+	{
+		g_bSongWindowAutoHide = false;
+		WritePrivateProfileStringA_tramp("Defaults", "SongWindowAutoHide", "FALSE", "./eqclient.ini");
+	}
+	else // Default off
+	{
+		g_bSongWindowAutoHide = false;
 	}
 }
 
