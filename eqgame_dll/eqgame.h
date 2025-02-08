@@ -12,6 +12,25 @@ struct Merchant_DelItem_Struct
 	/*005*/	unsigned char	type;     // 0x40
 							  /*006*/
 };
+
+struct SpawnAppearance_Struct { // sizeof=0x8
+	/*000*/ unsigned short spawn_id;
+	/*002*/ unsigned short type;
+	/*004*/ unsigned int parameter;
+	/*008*/
+};
+
+// Custom Messaging Support
+constexpr unsigned int SpawnAppearanceType_ClientDllMessage = 256;
+void SendCustomSpawnAppearanceMessage(unsigned __int16 feature_id, unsigned __int16 feature_value, bool is_request);
+
+// Song Window Support
+__declspec(dllexport) class CShortBuffWindow* GetShortDurationBuffWindow();
+
+struct _EQBUFFINFO* GetStartBuffArray(class CBuffWindow* window);
+int GetStartBuffIndex(class CBuffWindow* window);
+void SetTemporaryBuffOffset(int offset);
+
 /*
 voidpf eqemu_alloc_func(voidpf opaque, uInt items, uInt size);
 void eqemu_free_func(voidpf opaque, voidpf address);

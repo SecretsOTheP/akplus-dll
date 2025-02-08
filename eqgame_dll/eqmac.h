@@ -119,6 +119,7 @@ const float EQ_PI = 3.14159265358979f;
 
 #define EQ_NUM_COMMANDS 277 // 0-276
 #define EQ_NUM_BUFFS 15
+#define EQ_NUM_SPELL_EFFECTS 12
 #define EQ_NUM_SPELLS 4000
 #define EQ_NUM_SPELL_GEMS 8
 #define EQ_NUM_GROUP_MEMBERS 5
@@ -948,6 +949,26 @@ Teleport = 11
 #define EQ_INVENTORY_SLOT_FIRST       EQ_INVENTORY_SLOT_EAR_LEFT
 #define EQ_INVENTORY_SLOT_LAST        EQ_INVENTORY_SLOT_BAG8
 
+#define SE_CurrentHP        0
+#define SE_ArmorClass       1
+#define SE_MovementSpeed    3
+#define SE_CHA              10
+#define SE_AttackSpeed      11
+#define SE_CurrentMana      15
+#define SE_Lycanthropy      44
+#define SE_Vampirism        45
+#define SE_ResistFire       46
+#define SE_ResistCold       47
+#define SE_ResistPoison     48
+#define SE_ResistDisease    49
+#define SE_ResistMagic      50
+#define SE_Illusion         58
+#define SE_Root             99
+#define SE_HealOverTime     100
+#define SE_CompleteHeal     101
+#define SE_ResistAll        111
+#define SE_Blank            254
+
 const size_t EQ_STRINGSIZE_TEXT_COLOR_NAME = 21;
 
 const char* EQ_STRING_TEXT_COLOR_NAME[EQ_STRINGSIZE_TEXT_COLOR_NAME] =
@@ -1622,11 +1643,12 @@ typedef struct _EQSPELLINFO
 	/* 0x0097 */ BYTE FizzleAdjustment;
 	/* 0x0098 */ BYTE SkillType;
 	/* 0x0099 */ BYTE ZoneType; // 0x01 = Outdoors, 0x02 = Dungeons, 0xFF = Any
-	/* 0x009A */ BYTE ZoneType2;
-	/* 0x009B */ BYTE EnvironmentType;
-	/* 0x009C */ BYTE TimeOfDay;
-	/* 0x009D */ BYTE Level[15]; // minimum level to cast for each class
-	/* 0x00AC */ BYTE Unknown0192[36];
+	/* 0x009A */ BYTE Environment;
+	/* 0x009B */ BYTE TimeOfDay_;
+	/* 0x009C */ BYTE ClassLevel[16]; // minimum level to cast for each class
+	/* 0x00AC */ BYTE Unknown0x14f[16];
+	/* 0x00BC */ BYTE CastingAnim;
+	/* 0x00BD */ BYTE Unknown0x0bd[19];
 	/* 0x00D0 */ PCHAR Name;        // [32]
 	/* 0x00D4 */ PCHAR Target;      // [16]
 	/* 0x00D8 */ PCHAR Extra;       // [32] ; Teleport zone, pet name summoned or item summoned
@@ -1635,7 +1657,15 @@ typedef struct _EQSPELLINFO
 	/* 0x00E4 */ PCHAR CastOnYou;   // [32]
 	/* 0x00E8 */ PCHAR CastOnOther; // [40]
 	/* 0x00EC */ PCHAR WearOff;     // [32]
-									/* ...... */
+	/* 0x00F0 */ BYTE Unknown0x0f0[24];
+	/* 0x0108 */ DWORD Icon;
+	/* 0x010C */ BYTE ResistAdj;
+	/* 0x010D */ BYTE Unknown0x10d[11];
+	/* ...... */
+
+	inline bool IsBardsong() { return ClassLevel[EQ_CLASS_BARD] != 0xFF && ClassLevel[EQ_CLASS_BARD] != 0; }
+	inline bool IsBeneficial() { return BuffType > 0; }
+
 } EQSPELLINFO, *PEQSPELLINFO;
 
 typedef struct _EQSPELLLIST
@@ -1677,7 +1707,8 @@ typedef struct _EQCHARINFO
 	/* 0x0042 */ CHAR LastName[70]; // [0x46] ; surname or title
 	/* 0x0088 */ WORD Gender; // EQ_GENDER_x
 	/* 0x008A */ WORD Race; // EQ_RACE_x
-	/* 0x008C */ WORD Class; // EQ_CLASS_x
+	/* 0x008C */ BYTE Class; // EQ_CLASS_x
+	/* 0x008D */ BYTE Unknown008D;
 	/* 0x008E */ WORD Unknown008E;
 	/* 0x0090 */ WORD Level;
 	/* 0x0092 */ WORD Unknown0092;
@@ -1736,7 +1767,7 @@ typedef struct _EQCHARINFO
 	/* 0x0D40 */ BYTE Unknown0D40[20];
 	/* 0x0D54 */ DWORD Hunger;
 	/* 0x0D58 */ DWORD Thirst;
-	/* 0x0D5C */ BYTE Unknown0D5C[20];
+	/* 0x0D5C */ _EQBUFFINFO BuffsExtMinus15[2];
 	/* 0x0D70 */ DWORD ZoneId;
 	/* 0x0D74 */ struct _EQSPAWNINFO* SpawnInfo;
 	/* 0x0D78 */ struct _EQITEMINFO* CursorItem;
@@ -1746,11 +1777,9 @@ typedef struct _EQCHARINFO
 		/* 0x0D7C */ struct _EQITEMINFO* InventoryItem[EQ_NUM_INVENTORY_SLOTS];
 	};
 	/* 0x0DD0 */ struct _EQITEMINFO* InventoryPackItem[EQ_NUM_INVENTORY_PACK_SLOTS];
-	/* 0x0DF0 */ BYTE Unknown0DF0[116];
-	/* 0x0E64 */ DWORD Unknown0E64;
-	/* 0x0E68 */ BYTE Unknown0E68[32];
-	/* 0x0E88 */ DWORD Unknown0E88;
-	/* 0x0E8C */ BYTE Unknown0E8C[56];
+	/* 0x0DF0*/  BYTE Unknown0DF0[2];
+	/* 0x0DF2*/  _EQBUFFINFO BuffsExt[15];
+	/* 0x0E88*/  WORD BuffCasterId[30];
 	/* 0x0EC4 */ DWORD ZoneBoundId;
 	/* 0x0EC8 */ DWORD Unknown0EC8;
 	/* 0x0ECC */ DWORD Unknown0ECC;
@@ -2219,16 +2248,90 @@ typedef struct _EQCXSTR
 	/* 0x0014*/ CHAR Text[1]; // use Length and MaxLength
 } EQCXSTR, *PEQCXSTR;
 
+typedef struct _CXWNDVFTABLE
+{
+	LPVOID IsValid;
+	LPVOID Deconstructor;
+	LPVOID DrawNC;
+	LPVOID Draw;
+	LPVOID PostDraw;
+	LPVOID DrawCursor;
+	LPVOID DrawChildItem;
+	LPVOID DrawCaret;
+	LPVOID DrawBackground;
+	LPVOID DrawTooltip;
+	LPVOID GetMinimizedRect;
+	LPVOID DrawTitleBar;
+	LPVOID GetCursorToDisplay;
+	LPVOID HandleLButtonDown;
+	LPVOID HandleLButtonUp;
+	LPVOID HandleLButtonHeld;
+	LPVOID HandleLButtonUpAfterHeld;
+	LPVOID HandleRButtonDown;
+	LPVOID HandleRButtonUp;
+	LPVOID HandleRButtonHeld;
+	LPVOID HandleRButtonUpAfterHeld;
+	LPVOID HandleWheelButtonDown;
+	LPVOID HandleWheelButtonUp;
+	LPVOID HandleMouseMove;
+	LPVOID HandleWheelMove;
+	LPVOID TranslateKeyboardMsg;
+	LPVOID HandleKeyboardMsg;
+	LPVOID OnDragDrop;
+	LPVOID GetDragDropCursor;
+	LPVOID QueryDropOK;
+	LPVOID OnClickStick;
+	LPVOID OnClickStickCursor;
+	LPVOID QueryClickStickDropOK;
+	LPVOID WndNotification;
+	LPVOID Deactivate;
+	LPVOID OnShow;
+	LPVOID OnMove;
+	LPVOID OnResize;
+	LPVOID OnMinimizeBox;
+	LPVOID OnTileBox;
+	LPVOID OnTile;
+	LPVOID OnSetFocus;
+	LPVOID OnKillFocus;
+	LPVOID OnProcessFrame;
+	LPVOID OnVScroll;
+	LPVOID OnHScroll;
+	LPVOID OnBroughtToTop;
+	LPVOID OnActivate;
+	LPVOID AboutToDeleteWnd;
+	LPVOID RequestDockInfo;
+	LPVOID GetTooltip;
+	LPVOID HitTest;
+	LPVOID GetHitTestRect;
+	LPVOID GetInnerRect;
+	LPVOID GetClientRect;
+	LPVOID GetMinSize;
+	LPVOID GetUntileSize;
+	LPVOID IsPointTransparent;
+	LPVOID SetDrawTemplate;
+	LPVOID SetWindowTextA;
+	LPVOID SetVScrollPos;
+	LPVOID SetAttributesFromSidl;
+	LPVOID OnReloadSidl;
+} CXWNDVFTABLE, *PCXWNDVFTABLE;
+
+struct SidlScreenWndVTable : _CXWNDVFTABLE
+{
+	LPVOID LoadIniInfo;
+	LPVOID StoreIniInfo;
+};
+
+
 // CXWnd and CSidlScreenWnd share these same properties
 // sizeof 0xAC
 typedef struct _EQWND
 {
-	/* 0x0000 */ DWORD Unknown0000; // struct _CSIDLWNDVFTABLE *pvfTable; struct _CXWNDVFTABLE *pvfTable;
+	/* 0x0000 */ PCXWNDVFTABLE pvfTable; // struct _CSIDLWNDVFTABLE *pvfTable; struct _CXWNDVFTABLE *pvfTable;
 	/* 0x0004 */ DWORD MouseHoverTimer;
-	/* 0x0008 */ DWORD Unknown0008; // usually equals 2000
-	/* 0x000C */ DWORD Unknown000C; // usually equals 500
-	/* 0x0010 */ BYTE Unknown0010;
-	/* 0x0011 */ BYTE Unknown0011;
+	/* 0x0008 */ DWORD FadeDelay; // usually equals 2000
+	/* 0x000C */ DWORD FadeDuration; // usually equals 500
+	/* 0x0010 */ BYTE FadedAlpha;
+	/* 0x0011 */ BYTE IsNotFaded;
 	/* 0x0012 */ BYTE IsLocked;
 	/* 0x0013 */ BYTE Unknown0013;
 	/* 0x0014 */ PVOID Unknown0014;
@@ -2256,7 +2359,9 @@ typedef struct _EQWND
 	/* 0x0064 */ PEQCXSTR ToolTipText;
 	/* 0x0068 */ BYTE Unknown0068[28];
 	/* 0x0084 */ PEQCXSTR XmlToolTipText;
-	/* 0x0088 */ BYTE Unknown0088[22];
+	/* 0x0088 */ BYTE Unknown0088[20];
+	/* 0x009C */ BYTE UnfadedAlpha;
+	/* 0x009D */ BYTE Unknown009D;
 	/* 0x009E */ BYTE AlphaTransparency;
 	/* 0x009F */ BYTE Unknown009F;
 	/* 0x00A0 */ BYTE ZLayer;
@@ -2265,14 +2370,25 @@ typedef struct _EQWND
 	/* 0x00AC */
 } EQWND, *PEQWND;
 
+struct CScreenPieceTemplate
+{
+	DWORD Unknown[27];
+	int* Unknown006C;
+	int Count;
+};
+
 // the moveable resizable parent windows
 // class CSidlScreenWnd
 // sizeof 0x138
 typedef struct _EQCSIDLWND
 {
 	/* 0x0000 */ struct _EQWND EQWnd;
-	/* 0x00AC */ BYTE Unknown00AC[140]; // skips the rest
-										/* 0x0138 */
+	/* 0x00AC */ BYTE Unknown00AC[136];
+	/* 0x0134 */ BYTE Unknown00134; // Initialization flag
+	/* 0x0135 */ BYTE Unknown00135; // Initialization flag
+	/* 0x0136 */ BYTE Unknown00136;
+	/* 0x0137 */ BYTE Unknown00137;
+	/* 0x0138 */
 } EQCSIDLWND, *PEQCSIDLWND;
 
 // usually a child window like a button or label
@@ -2296,13 +2412,43 @@ typedef struct _EQCITEMDISPLAYWND
 	/* ...... */
 } EQCITEMDISPLAYWND, *PEQCITEMDISPLAYWND;
 
-typedef struct _EQCBUFFWINDOW
+struct CTextureAnimation
+{
+	/* 0x0000 */ DWORD* Unknown0000;
+	/* 0x0004 */ DWORD Unknown0004[4];
+	/* 0x0014 */ bool Bool00014;
+	/* 0x0015 */ BYTE Unknown0015;
+	/* 0x0016 */ BYTE Unknown0016;
+	/* 0x0017 */ BYTE Unknown0017;
+	/* 0x0018 */ unsigned __int64 Unknown0018;
+	/* 0x0020 */ DWORD CreationTime;
+	/* 0x0024 */ unsigned __int64 Unknown0024;
+	/* 0x002C */ DWORD Flag_256;
+	/* 0x0030 */ unsigned __int64 Unknown0030;
+	/* 0x0038 */ DWORD Flag_Neg1;
+	/* 0x003C */ DWORD* Unknown003C;
+	/* 0x0040 */ DWORD Unknown0040[3];
+};
+
+typedef struct _EQCBUFFBUTTONWND
+{
+	/*0x000*/ struct _EQCSIDLWND CSidlWnd;
+	/*0x138*/ CTextureAnimation* CTextureAnimtation; // BlueIconBackground or RedIconBackground or null
+
+} EQCBUFFBUTTONWND, *PEQCBUFFBUTTONWND;
+
+typedef struct _EQCBUFFWINDOW // sizeof = 0x01C4
 {
 	/* 0x0000 */ struct _EQCSIDLWND CSidlWnd;
-	/* 0x0138 */ BYTE Unknown0138[68];
-	/* 0x017C */ struct _EQCSIDLWND* BuffButtonWnd[EQ_NUM_BUFFS]; // CButtonWnd
-																  /* 0x01B8 */
-																  /* ...... */
+	/* 0x0138 */ CTextureAnimation* BlueIconBackground;
+	/* 0x013C */ CTextureAnimation* RedIconBackground;
+	/* 0x0140 */ CTextureAnimation* CTextureAnimations[EQ_NUM_BUFFS];
+	/* 0x017C */ PEQCBUFFBUTTONWND BuffButtonWnd[EQ_NUM_BUFFS];
+	/* 0x01B8 */ DWORD NextRefreshTime;
+	/* 0x01BC */ DWORD Width;
+	/* 0x01C0 */ DWORD Height;
+	/*  End   */
+
 } EQCBUFFWINDOW, *PEQCBUFFWINDOW;
 
 typedef struct _EQCLOOTWND
