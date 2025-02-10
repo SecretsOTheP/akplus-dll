@@ -322,8 +322,8 @@ public:
 	static inline bool RemoveMyAffect(void* player, __int16 buffslot) {
 		return reinterpret_cast<char(__thiscall*)(void*, __int16)>(0x4D0337)(player, buffslot);
 	}
-	static inline int CalcSpellEffectValue(void* player, EQSPELLINFO* spell, BYTE casterLevel, BYTE effectIndex, int v5) {
-		return reinterpret_cast<int(__thiscall*)(void*, EQSPELLINFO*, BYTE, BYTE, int)>(0x004C657D)(player, spell, casterLevel, effectIndex, v5);
+	static inline short CalcSpellEffectValue(void* player, EQSPELLINFO* spell, BYTE casterLevel, BYTE effectIndex, _EQBUFFINFO* optional_buff) {
+		return reinterpret_cast<short(__thiscall*)(void*, EQSPELLINFO*, BYTE, BYTE, _EQBUFFINFO*)>(0x004C657D)(player, spell, casterLevel, effectIndex, optional_buff);
 	}
 	static inline EQBUFFINFO* GetBuff(void* player, __int16 buffslot) {
 		return reinterpret_cast<_EQBUFFINFO * (__thiscall*)(void*, __int16)>(0x004C465A)(player, buffslot);
