@@ -69,6 +69,11 @@ bool auto_login = false;
 char UserName[64];
 char PassWord[64];
 
+// [BuffStackingPatch] Values are modified via the OnZone handshake
+bool Rule_Buffstacking_Patch_Enabled = false;
+int Rule_Num_Short_Buffs = 0;
+int Rule_Max_Buffs = EQ_NUM_BUFFS;
+
 typedef signed int(__cdecl* ProcessGameEvents_t)();
 ProcessGameEvents_t return_ProcessGameEvents;
 ProcessGameEvents_t return_ProcessMouseEvent;
@@ -1111,20 +1116,20 @@ void __fastcall EQMACMQ_DETOUR_CBuffWindow__RefreshBuffDisplay(CBuffWindow* this
 	}
 
 	// Supports ShortBuffWindow(Songs) and BuffWindow, which use different buff offsets
-	_EQBUFFINFO* buffs = GetStartBuffArray(this_ptr);
-	int startBuffIndex = GetStartBuffIndex(this_ptr);
-	SetTemporaryBuffOffset(startBuffIndex);
+	bool is_song_window = (this_ptr == GetShortDurationBuffWindow());
+	_EQBUFFINFO* buffs = GetStartBuffArray(is_song_window);
+
+	MakeGetBuffReturnSongs(is_song_window);
 	EQMACMQ_REAL_CBuffWindow__RefreshBuffDisplay(this_ptr);
-	SetTemporaryBuffOffset(0);
+	MakeGetBuffReturnSongs(false);
+
 	int num_buffs = 0;
 
 	// -- Standard Dll Support Buff Text / Timer --
 	for (size_t i = 0; i < EQ_NUM_BUFFS; i++)
 	{
 		EQBUFFINFO& buff = buffs[i];
-		int spellId = buff.SpellId;
-
-		if (spellId == EQ_SPELL_ID_NULL || buff.BuffType == 0)
+		if (!EQ_Spell::IsValidSpellIndex(buff.SpellId) || buff.BuffType == 0)
 		{
 			continue;
 		}
@@ -1151,17 +1156,18 @@ void __fastcall EQMACMQ_DETOUR_CBuffWindow__RefreshBuffDisplay(CBuffWindow* this
 		}
 	}
 
-	if (g_bSongWindowAutoHide && this_ptr == GetShortDurationBuffWindow()) {
-		if (num_buffs == 0) {
-			if (this_ptr->IsVisibile()) {
-				this_ptr->Show(0, 1);
-			}
-		}
-		else if (!this_ptr->IsVisibile()) {
-			this_ptr->Show(1, 1);
-		}
+	if (this_ptr->IsVisibile())
+	{
+		if (num_buffs == 0 && (g_bSongWindowAutoHide || Rule_Num_Short_Buffs == 0)) // Visible, but support is disabled or auto-hide
+			this_ptr->Show(0, 1);
+		return;
 	}
-};
+	if (num_buffs > 0)
+	{ 
+		// Not visible and we have buffs. Show.
+		this_ptr->Show(1, 1);
+	}
+}
 
 int __fastcall EQMACMQ_DETOUR_EQ_Character__CastSpell(void* this_ptr, void* not_used, unsigned char a1, short a2, EQITEMINFO** a3, short a4)
 {
@@ -1192,14 +1198,13 @@ int __fastcall EQMACMQ_DETOUR_CBuffWindow__PostDraw(CBuffWindow* this_ptr, void*
 		return result;
 	}
 
-	_EQBUFFINFO* buffs = GetStartBuffArray(this_ptr); // Song Window Support
+	bool is_song_window = (this_ptr == GetShortDurationBuffWindow());
+	_EQBUFFINFO* buffs = GetStartBuffArray(is_song_window); // Song Window Support
 
 	for (size_t i = 0; i < EQ_NUM_BUFFS; i++)
 	{
 		EQBUFFINFO& buff = buffs[i];
-
-		int spellId = buff.SpellId;
-		if (spellId == EQ_SPELL_ID_NULL)
+		if (!EQ_Spell::IsValidSpellIndex(buff.SpellId) || buff.BuffType == 0)
 		{
 			continue;
 		}
@@ -2510,15 +2515,10 @@ constexpr WORD CustomSpawnAppearanceMessage_BuffStackingPatchHandshake = 1;
 constexpr WORD BSP_VERSION_V2 = 2; // Buff Stacking Fixes and 6 Buff Song Window Support (Requires new UI)
 constexpr WORD BSP_VERSION_V1 = 1; // Buff Stacking Fixes
 
-// Requires handshake to enable modifications
-bool Rule_Buffstacking_Patch_Enabled = false;
-int Rule_Num_Short_Buffs = 0;
-int Rule_Max_Buffs = EQ_NUM_BUFFS;
-
 // Short Buff Window
 CShortBuffWindow* ShortBuffWindow = nullptr;
 // Set during ShortBuffWindow's refresh logic, so it reads from offset 15 (because it shares logic with CBuffWindow)
-thread_local int ShortBuffSupport_BuffOffset = 0;
+thread_local bool ShortBuffSupport_ReturnSongBuffs = false;
 
 // -- [Handshake / Initialization] --
 
@@ -2615,7 +2615,7 @@ _EQBUFFINFO* BSP_FindAffectSlot(EQCHARINFO* player, WORD spellid, _EQSPAWNINFO* 
 	EQBUFFINFO* old_buff = 0;
 	EQSPELLINFO* old_spelldata = 0;
 	int cur_slotnum7 = 0;
-	int cur_slotnum7_buffslot = BSP_ToBuffSlot(0, StartBuffOffset, MaxSelectableBuffs);
+	int cur_slotnum7_buffslot = BSP_ToBuffSlot(cur_slotnum7, StartBuffOffset, MaxSelectableBuffs);
 	BYTE new_buff_effect_id2 = 0;
 	int effect_slot_num = 0;
 	bool no_slot_found_yet = true;
@@ -2623,8 +2623,8 @@ _EQBUFFINFO* BSP_FindAffectSlot(EQCHARINFO* player, WORD spellid, _EQSPAWNINFO* 
 	bool old_effect_value_is_negative_or_zero = false;
 	bool is_bard_song = new_spell->IsBardsong();
 	bool is_movement_effect = BSP_SpellAffectIndex(new_spell, SE_MovementSpeed) != 0; // [Patch:Main] Optimization - Caching the value.
-	int old_effect_value;
-	int new_effect_value;
+	short old_effect_value;
+	short new_effect_value;
 
 	if (is_bard_song) // [Patch:Main] - Removed: caster->Class == BARD
 	{
@@ -2643,9 +2643,10 @@ _EQBUFFINFO* BSP_FindAffectSlot(EQCHARINFO* player, WORD spellid, _EQSPAWNINFO* 
 						&& !buff_spell->IsBeneficial()
 						&& new_spell->IsBeneficial()
 						&& is_movement_effect
-						&& (BSP_SpellAffectIndex(buff_spell, SE_MovementSpeed) || BSP_SpellAffectIndex(buff_spell, SE_Root)))
+						&& (BSP_SpellAffectIndex(buff_spell, SE_MovementSpeed) != 0 || BSP_SpellAffectIndex(buff_spell, SE_Root) != 0))
 					{
-						goto BLOCK_SPELL_42;
+						*result_buffslot = -1;
+						return 0;
 					}
 				}
 			}
@@ -2664,7 +2665,7 @@ _EQBUFFINFO* BSP_FindAffectSlot(EQCHARINFO* player, WORD spellid, _EQSPAWNINFO* 
 			if (buff_spell_id == spellid)
 			{
 				EQSPAWNINFO* SpawnInfo = player->SpawnInfo;
-				if (!SpawnInfo || caster->Type || SpawnInfo->Type != 1)
+				if (!SpawnInfo || caster->Type != EQ_SPAWN_TYPE_PLAYER || SpawnInfo->Type != EQ_SPAWN_TYPE_NPC)
 					goto OVERWRITE_SAME_SPELL_WITHOUT_REMOVING_FIRST;
 				if (buff_spell_id == 2755) // Lifeburn
 					can_multi_stack = false;
@@ -2672,17 +2673,19 @@ _EQBUFFINFO* BSP_FindAffectSlot(EQCHARINFO* player, WORD spellid, _EQSPAWNINFO* 
 				{
 				OVERWRITE_SAME_SPELL_WITHOUT_REMOVING_FIRST:
 					if (caster->Level >= buff->CasterLevel
-						&& !BSP_SpellAffectIndex(new_spell, 67)// Eye of Zomm
-						&& !BSP_SpellAffectIndex(new_spell, 101)// Complete Heal
-						&& !BSP_SpellAffectIndex(new_spell, 113))// Summon Horse
+						&& BSP_SpellAffectIndex(new_spell, 67) == 0  // Eye of Zomm
+						&& BSP_SpellAffectIndex(new_spell, 101) == 0 // Complete Heal
+						&& BSP_SpellAffectIndex(new_spell, 113) == 0)    // Summon Horse
 					{
 						// overwrite same spell_id without removing first
 						*result_buffslot = buffslot;
 						return buff;
 					}
-				BLOCK_SPELL_42:
-					*result_buffslot = -1;
-					return 0;
+					else
+					{
+						*result_buffslot = -1;
+						return 0;
+					}
 				}
 				spell_id_already_affecting_target = true;
 			}
@@ -2754,7 +2757,7 @@ _EQBUFFINFO* BSP_FindAffectSlot(EQCHARINFO* player, WORD spellid, _EQSPAWNINFO* 
 						if (EQ_Spell::IsValidSpellIndex(buff_spell_id))
 						{
 							EQSPELLINFO* buff_spell = EQ_Spell::GetSpell(buff_spell_id);
-							if (buff_spell && buff_spell->IsBeneficial())
+							if (buff_spell && buff_spell->IsBeneficial()) // found a beneficial spell to overwrite
 								break;
 						}
 						if (++curbuff_i >= MaxSelectableBuffs)
@@ -2797,8 +2800,10 @@ _EQBUFFINFO* BSP_FindAffectSlot(EQCHARINFO* player, WORD spellid, _EQSPAWNINFO* 
 		no_slot_found_yet = *result_buffslot == -1;
 	STACK_OK3:
 		if (no_slot_found_yet)
-			STACK_OK2:
+		{
+		STACK_OK2:
 			*result_buffslot = cur_slotnum7_buffslot; // save first blank slot found
+		}
 	STACK_OK: // jump here when current buff and new buff don't interact to increment slot number and check next buff
 		if (++cur_slotnum7 >= MaxSelectableBuffs)
 		{
@@ -2808,8 +2813,8 @@ _EQBUFFINFO* BSP_FindAffectSlot(EQCHARINFO* player, WORD spellid, _EQSPAWNINFO* 
 	}
 	if (is_bard_song && !old_spelldata->IsBardsong()) // [Patch:Main] Just checks 'is_bard_song' and not class
 	{
-		if (new_spell->IsBeneficial() && is_movement_effect && BSP_SpellAffectIndex(old_spelldata, SE_MovementSpeed)
-			|| new_spell->IsBeneficial() && is_movement_effect && BSP_SpellAffectIndex(old_spelldata, SE_Root))
+		if (new_spell->IsBeneficial() && is_movement_effect && BSP_SpellAffectIndex(old_spelldata, SE_MovementSpeed) != 0
+			|| new_spell->IsBeneficial() && is_movement_effect && BSP_SpellAffectIndex(old_spelldata, SE_Root) != 0)
 		{
 			goto BLOCK_BUFF_178; // [Patch:Main] This line isn't reachable, kept for consistency (formerly: "Bard Selos can't overwrite regular SoW type spell or rooting illusion")
 		}
@@ -2826,7 +2831,7 @@ _EQBUFFINFO* BSP_FindAffectSlot(EQCHARINFO* player, WORD spellid, _EQSPAWNINFO* 
 		{
 			if (is_movement_effect)
 			{
-				if (BSP_SpellAffectIndex(old_spelldata, SE_MovementSpeed))
+				if (BSP_SpellAffectIndex(old_spelldata, SE_MovementSpeed) != 0)
 				{
 					if (old_spelldata->IsBardsong() && !is_bard_song)
 						goto BLOCK_BUFF_178; // regular SoW type spell can't overwrite bard Selos
@@ -2893,7 +2898,7 @@ _EQBUFFINFO* BSP_FindAffectSlot(EQCHARINFO* player, WORD spellid, _EQSPAWNINFO* 
 	{
 		goto BLOCK_BUFF_178;
 	}
- 
+
 	old_effect_value = EQ_Character::CalcSpellEffectValue(player, old_spelldata, old_buff->CasterLevel, effect_slot_num, 0);
 	new_effect_value = EQ_Character::CalcSpellEffectValue(player, new_spell, caster->Level, effect_slot_num, 0);
 
@@ -2993,14 +2998,11 @@ _EQBUFFINFO* __fastcall EQCharacter__FindAffectSlot_Detour(EQCHARINFO* player, i
 // Buff Patch [Song Window]
 // ---------------------------------------------------------
 
-_EQBUFFINFO* GetStartBuffArray(CBuffWindow* window) {
-	return window == GetShortDurationBuffWindow() ? EQ_OBJECT_CharInfo->BuffsExt : EQ_OBJECT_CharInfo->Buff;
+_EQBUFFINFO* GetStartBuffArray(bool song_buffs) {
+	return song_buffs ? EQ_OBJECT_CharInfo->BuffsExt : EQ_OBJECT_CharInfo->Buff;
 }
-int GetStartBuffIndex(class CBuffWindow* window) {
-	return window == GetShortDurationBuffWindow() ? EQ_NUM_BUFFS : 0;
-}
-void SetTemporaryBuffOffset(int offset) {
-	ShortBuffSupport_BuffOffset = offset;
+void MakeGetBuffReturnSongs(bool enabled) {
+	ShortBuffSupport_ReturnSongBuffs = enabled;
 }
 
 // MaxBuffs is now increased when enabled (Rule_Max_Buffs)
@@ -3024,7 +3026,10 @@ int __fastcall EQCHARACTER__GetMaxBuffs_Detour(EQCHARINFO* player, int unused)
 typedef _EQBUFFINFO* (__thiscall* EQ_FUNCTION_TYPE_EQCharacter__GetBuff)(EQCHARINFO* this_char_info, int buff_slot);
 EQ_FUNCTION_TYPE_EQCharacter__GetBuff EQCharacter__GetBuff_Trampoline;
 _EQBUFFINFO* __fastcall EQCharacter__GetBuff_Detour(EQCHARINFO* player, int unused, WORD buff_slot) {
-	return EQCharacter__GetBuff_Trampoline(player, buff_slot + ShortBuffSupport_BuffOffset);
+	if (ShortBuffSupport_ReturnSongBuffs && buff_slot < 15) {
+		buff_slot += 15;
+	}
+	return EQCharacter__GetBuff_Trampoline(player, buff_slot);
 }
 
 // Hook that removes buffs or shows spell info when clicking the song window, and shows tooltips on mouseover
@@ -3032,16 +3037,17 @@ int __fastcall CBuffWindow__WndNotification_Detour(CBuffWindow* self, int unused
 {
 	// Shared hook with CBuffWindow
 	// Use the right buff slot offset based on the window.
-	int start_buff_index = GetStartBuffIndex(self);
+	bool is_song_window = (self == GetShortDurationBuffWindow());
+	int start_buff_index = is_song_window ? 15 : 0;
 
 	if (type != 1)
 	{
 		if (type != 23 && type != 25)
 			return CSidlScreenWnd::WndNotification(self, sender, type, a4);
 	LABEL_11:
-		SetTemporaryBuffOffset(start_buff_index);
+		MakeGetBuffReturnSongs(is_song_window);
 		self->HandleSpellInfoDisplay(sender);
-		SetTemporaryBuffOffset(0);
+		MakeGetBuffReturnSongs(false);
 		return CSidlScreenWnd::WndNotification(self, sender, type, a4);
 	}
 	if (AltPressed())

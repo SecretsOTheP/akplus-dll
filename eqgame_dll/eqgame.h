@@ -27,9 +27,8 @@ void SendCustomSpawnAppearanceMessage(unsigned __int16 feature_id, unsigned __in
 // Song Window Support
 __declspec(dllexport) class CShortBuffWindow* GetShortDurationBuffWindow();
 
-struct _EQBUFFINFO* GetStartBuffArray(class CBuffWindow* window);
-int GetStartBuffIndex(class CBuffWindow* window);
-void SetTemporaryBuffOffset(int offset);
+struct _EQBUFFINFO* GetStartBuffArray(bool songs_buffs);
+void MakeGetBuffReturnSongs(bool enabled);
 
 /*
 voidpf eqemu_alloc_func(voidpf opaque, uInt items, uInt size);
