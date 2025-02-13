@@ -1164,16 +1164,19 @@ void __fastcall EQMACMQ_DETOUR_CBuffWindow__RefreshBuffDisplay(CBuffWindow* this
 		}
 	}
 
-	if (this_ptr->IsVisibile())
+	if (is_song_window)
 	{
-		if (num_buffs == 0 && (g_bSongWindowAutoHide || Rule_Num_Short_Buffs == 0)) // Visible, but support is disabled or auto-hide
-			this_ptr->Show(0, 1);
-		return;
-	}
-	if (num_buffs > 0)
-	{ 
-		// Not visible and we have buffs. Show.
-		this_ptr->Show(1, 1);
+		if (this_ptr->IsVisibile())
+		{
+			if (num_buffs == 0 && (g_bSongWindowAutoHide || Rule_Num_Short_Buffs == 0)) // Visible, but support is disabled or auto-hide
+				this_ptr->Show(0, 1);
+			return;
+		}
+		if (num_buffs > 0)
+		{
+			// Not visible and we have buffs. Show.
+			this_ptr->Show(1, 1);
+		}
 	}
 }
 
