@@ -18,6 +18,13 @@
 #include <functional>
 #include <vector>
 
+// Sent on zone entry to the server.
+// Server uses this to tell the user if they are out of date.
+// Increment if we make significant changes that we want to track.
+// Server uses Quarm:WarnDllVersionBelow to warn clients below a specific threshold.
+#define DLL_VERSION 1
+#define DLL_VERSION_MESSAGE_ID 4 // Matches ClientFeature::CodeVersion == 4 on the Server, do not change.
+
 #define BYTEn(x, n) (*((BYTE*)&(x)+n))
 #define BYTE1(x) BYTEn(x, 0)
 #define BYTE2(x) BYTEn(x, 1)
@@ -120,13 +127,14 @@ void PatchA(LPVOID address, const void *dwValue, SIZE_T dwBytes) {
 }
 
 // copies target original value to buffer, then copies source to the target
-void PatchSwap(int target, BYTE* source, int size, BYTE* buffer = nullptr)
+void PatchSwap(int target, BYTE* source, SIZE_T size, BYTE* buffer = nullptr)
 {
 	DWORD oldprotect;
 	VirtualProtect((PVOID*)target, size, PAGE_EXECUTE_READWRITE, &oldprotect);
 	if (buffer)
 		memcpy((void*)buffer, (const void*)target, size);
 	memcpy((void*)target, (const void*)source, size);
+	FlushInstructionCache(GetCurrentProcess(), (void*)target, size);
 	VirtualProtect((PVOID*)target, size, oldprotect, &oldprotect);
 }
 
@@ -1156,16 +1164,19 @@ void __fastcall EQMACMQ_DETOUR_CBuffWindow__RefreshBuffDisplay(CBuffWindow* this
 		}
 	}
 
-	if (this_ptr->IsVisibile())
+	if (is_song_window)
 	{
-		if (num_buffs == 0 && (g_bSongWindowAutoHide || Rule_Num_Short_Buffs == 0)) // Visible, but support is disabled or auto-hide
-			this_ptr->Show(0, 1);
-		return;
-	}
-	if (num_buffs > 0)
-	{ 
-		// Not visible and we have buffs. Show.
-		this_ptr->Show(1, 1);
+		if (this_ptr->IsVisibile())
+		{
+			if (num_buffs == 0 && (g_bSongWindowAutoHide || Rule_Num_Short_Buffs == 0)) // Visible, but support is disabled or auto-hide
+				this_ptr->Show(0, 1);
+			return;
+		}
+		if (num_buffs > 0)
+		{
+			// Not visible and we have buffs. Show.
+			this_ptr->Show(1, 1);
+		}
 	}
 }
 
@@ -2503,6 +2514,11 @@ int sprintf_Detour_loadskin(char *const Buffer, const char *const format, ...)
 	return sprintf(Buffer, format, cxstr, useini);
 }
 
+void SendDllVersion_OnZone()
+{
+	SendCustomSpawnAppearanceMessage(DLL_VERSION_MESSAGE_ID, DLL_VERSION, true);
+}
+
 // ---------------------------------------------------------------------------------
 // BuffStacking Patches
 // ---------------------------------------------------------------------------------
@@ -2511,9 +2527,10 @@ int sprintf_Detour_loadskin(char *const Buffer, const char *const format, ...)
 // - Fixes broken checking that checked whether the target/caster was a bard, rather than just the spell being a bard song. Now we just care whether it's a bardsong.
 //----------------------------------------------------------------------------------
 
-constexpr WORD CustomSpawnAppearanceMessage_BuffStackingPatchHandshake = 1;
-constexpr WORD BSP_VERSION_V2 = 2; // Buff Stacking Fixes and 6 Buff Song Window Support (Requires new UI)
-constexpr WORD BSP_VERSION_V1 = 1; // Buff Stacking Fixes
+// Handshake "opcodes" sent to OP_SpawnAppearance (these values must be implemented on the server)
+constexpr WORD CustomSpawnAppearanceMessage_BuffStackingPatchWithSongWindowHandshake = 2;
+constexpr WORD CustomSpawnAppearanceMessage_BuffStackingPatchWithoutSongWindowHandshake = 3;
+constexpr WORD BSP_VERSION_1 = 1; // Buff Stacking feature flag sent to the server in the handshake
 
 // Short Buff Window
 CShortBuffWindow* ShortBuffWindow = nullptr;
@@ -2527,41 +2544,57 @@ void BuffstackingPatch_OnZone()
 	// Send handshake message to enable the client/server buffstacking changes.
 	bool is_new_ui = *(BYTE*)0x8092D8 != 0;
 	if (is_new_ui)
-		SendCustomSpawnAppearanceMessage(CustomSpawnAppearanceMessage_BuffStackingPatchHandshake, BSP_VERSION_V2, true);
+		SendCustomSpawnAppearanceMessage(CustomSpawnAppearanceMessage_BuffStackingPatchWithSongWindowHandshake, BSP_VERSION_1, true);
 	else
-		SendCustomSpawnAppearanceMessage(CustomSpawnAppearanceMessage_BuffStackingPatchHandshake, BSP_VERSION_V1, true);
+		SendCustomSpawnAppearanceMessage(CustomSpawnAppearanceMessage_BuffStackingPatchWithoutSongWindowHandshake, BSP_VERSION_1, true);
 }
+
+// Callback notification on server response to handshake
 bool BuffstackingPatch_HandleHandshake(DWORD id, DWORD value, bool is_request)
 {
-	if (id == CustomSpawnAppearanceMessage_BuffStackingPatchHandshake) {
-		// Handshake response from server, setup our flags
-		bool send_response = is_request;
-		bool enabled = false;
-		int enabled_songs = 0;
-		if (value == 0 || value == 0xFFFF) {
-			value = 0;
-		}
-		else if (value >= BSP_VERSION_V2) {
-			send_response |= value > BSP_VERSION_V2; // If the server gave us a higher verson, make sure we respond back anyway.
-			value = BSP_VERSION_V2;
+
+	bool send_response = is_request;
+	bool enabled = false;
+	int enabled_songs = 0;
+
+	if (id == CustomSpawnAppearanceMessage_BuffStackingPatchWithSongWindowHandshake)
+	{
+		if (value == BSP_VERSION_1)
+		{
 			enabled = true;
 			enabled_songs = 6;
 		}
-		else if (value == BSP_VERSION_V1) {
-			value = BSP_VERSION_V1;
+		else
+		{
+			value = 0;
+		}
+	}
+	else if (id == CustomSpawnAppearanceMessage_BuffStackingPatchWithoutSongWindowHandshake)
+	{
+		if (value == BSP_VERSION_1)
+		{
 			enabled = true;
 			enabled_songs = 0;
 		}
-		// Handshake Complete.
-		Rule_Buffstacking_Patch_Enabled = enabled;
-		Rule_Max_Buffs = EQ_NUM_BUFFS + enabled_songs;
-		Rule_Num_Short_Buffs = enabled_songs;
-		if (send_response) {
-			SendCustomSpawnAppearanceMessage(id, value, false);
+		else
+		{
+			value = 0;
 		}
-		return true;
 	}
-	return false;
+	else
+	{
+		return false;
+	}
+
+	// Handshake Complete.
+	Rule_Buffstacking_Patch_Enabled = enabled;
+	Rule_Max_Buffs = EQ_NUM_BUFFS + enabled_songs;
+	Rule_Num_Short_Buffs = enabled_songs;
+	if (send_response)
+	{
+		SendCustomSpawnAppearanceMessage(id, value, false);
+	}
+	return true;
 }
 
 // -- [Helper Functions] --
@@ -3333,6 +3366,9 @@ void InitHooks()
 	LegalPlayerRace_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__LegalPlayerRace)DetourFunction((PBYTE)0x0050BD9D, (PBYTE)LegalPlayerRace_Detour);
 	EQZoneInfo_Ctor_Trampoline = (EQ_FUNCTION_TYPE_EQZoneInfo__EQZoneInfo)DetourFunction((PBYTE)0x005223C6, (PBYTE)EQZoneInfo_Ctor_Detour);
 	EQPlayer_GetActorTag_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer_GetActorTag)DetourFunction((PBYTE)0x0050845D, (PBYTE)EQPlayer_GetActorTag_Detour);
+
+	// Sends DLL_VERSION to the server on zone-in
+	OnZoneCallbacks.push_back(SendDllVersion_OnZone);
 
 	// [BuffStackingPatch:Main]
 	EQCharacter__FindAffectSlot_Trampoline = (EQ_FUNCTION_TYPE_EQCharacter__FindAffectSlot)DetourFunction((PBYTE)0x004C7A3E, (PBYTE)EQCharacter__FindAffectSlot_Detour);
