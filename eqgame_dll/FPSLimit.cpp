@@ -65,7 +65,7 @@ void LoadIniSettings()
 	{
 		WritePrivateProfileStringA("Options", "NoFPSLimiter", szDefault, "./eqclient.ini");
 	}
-	frame_limiter = (bool)atoi(szResult);
+	frame_limiter = false;
 }
 
 void SetEQhWnd()

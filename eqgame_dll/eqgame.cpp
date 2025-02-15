@@ -1829,10 +1829,10 @@ int __cdecl do_quit_Detour(int a1, int a2) {
 typedef int(__thiscall* EQ_FUNCTION_TYPE_EQPlayer__LegalPlayerRace)(void* this_ptr, int a3);
 EQ_FUNCTION_TYPE_EQPlayer__LegalPlayerRace LegalPlayerRace_Trampoline;
 int __fastcall LegalPlayerRace_Detour(void* this_ptr, void* not_used, int a3) {
-	if (a3 == 26)
-	{
-		return 1;
-	}
+	//if (a3 == 26)
+	//{
+	//	return 1;
+	//}
 	return LegalPlayerRace_Trampoline(this_ptr, a3);
 }
 
