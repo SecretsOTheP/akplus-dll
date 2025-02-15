@@ -1971,11 +1971,10 @@ std::vector<std::pair<std::string, std::string>> readChrTextFile(const std::stri
 //}
 
 struct RaceData {
-	BYTE gender = 0;
 	std::string code;
 };
 
-std::map<unsigned int, RaceData> raceIdToCodeMap;
+std::map<std::pair<unsigned int, unsigned int>, std::string> raceIdToCodeMap;
 
 typedef int(__thiscall* EQ_FUNCTION_TYPE_EQPlayer_GetActorTag)(void* this_ptr, char* a2);
 EQ_FUNCTION_TYPE_EQPlayer_GetActorTag EQPlayer_GetActorTag_Trampoline;
@@ -1984,13 +1983,11 @@ int __fastcall EQPlayer_GetActorTag_Detour(void* this_ptr, void* not_used, char*
 	WORD ourRace = *(WORD*)((int)this_ptr + 0xAA);
 	BYTE ourGender = *(BYTE*)((int)this_ptr + 0xAC);
 
-	std::map<unsigned int, RaceData>::iterator it = raceIdToCodeMap.find(ourRace);
+	auto pair = std::pair<unsigned int, unsigned int>(ourRace, ourGender);
+	std::map<std::pair<unsigned int, unsigned int>, std::string>::iterator it = raceIdToCodeMap.find(pair);
 	if (it != raceIdToCodeMap.end())
 	{
-		if (it->second.gender == ourGender)
-		{
-			strcpy(a2, it->second.code.c_str());
-		}
+		strcpy(a2, it->second.c_str());
 	}
 	return res;
 }
@@ -2349,11 +2346,13 @@ void InitRaceShortCodeMap()
 				unsigned int genderIdNum = std::atoi(column[1].c_str());
 				std::string raceCodeId = column[2];
 
-				RaceData rData;
-				rData.gender = genderIdNum;
-				rData.code = raceCodeId;
 
-				raceIdToCodeMap.emplace(raceIdNum, rData);
+				auto pair = std::pair<unsigned int, unsigned int>(raceIdNum, genderIdNum);
+				auto it = raceIdToCodeMap.find(pair);
+				if (it == raceIdToCodeMap.end())
+				{
+					raceIdToCodeMap.emplace(pair, raceCodeId);
+				}
 			}
 		}
 	}
