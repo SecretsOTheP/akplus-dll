@@ -20,12 +20,25 @@ struct SpawnAppearance_Struct { // sizeof=0x8
 	/*008*/
 };
 
+struct WearChange_Struct
+{
+	/*000*/ unsigned short spawn_id;
+	/*002*/ unsigned char  wear_slot_id; // 0=Head 1=Chest 2=Arms 3=Wrist 4=Gloves 5=Legs 6=Boots 7=MH 8=OH
+	/*003*/ unsigned char  align03;
+	/*004*/ unsigned short material;     // Armor Material or IT### number in (Item->IDFile)
+	/*006*/ unsigned short align06;
+	/*008*/ unsigned int   color;
+};
+
 // Custom Messaging Support
 constexpr unsigned int SpawnAppearanceType_ClientDllMessage = 256;
 void SendCustomSpawnAppearanceMessage(unsigned __int16 feature_id, unsigned __int16 feature_value, bool is_request);
 
 // Song Window Support
 __declspec(dllexport) class CShortBuffWindow* GetShortDurationBuffWindow();
+
+// Tint Support
+bool Handle_In_OP_WearChange(WearChange_Struct* wc);
 
 struct _EQBUFFINFO* GetStartBuffArray(bool songs_buffs);
 void MakeGetBuffReturnSongs(bool enabled);

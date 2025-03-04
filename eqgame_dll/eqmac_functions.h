@@ -266,6 +266,10 @@ public:
 	int __cdecl CDisplay::SetNameSpriteState(class EQPlayer* spawn, bool show);
 	int __cdecl CDisplay::SetNameSpriteTint(class EQPlayer* spawn);
 
+	static inline int SetDagSpriteTint(EQDAGINFO* dag, DWORD tint) {
+		return reinterpret_cast<int(__thiscall*)(int*, void*, DWORD*)>(0x49FF51)(*(int**)EQ_POINTER_CDisplay, dag, &tint);
+	}
+
 	/* 0x0000 */ DWORD Unknown0000[50];
 	/* 0x00C8 */ DWORD Timer;
 	/* ...... */
@@ -302,8 +306,20 @@ public:
 	void EQPlayer::FacePlayer(class EQPlayer* spawn);
 
 	static inline EQSPAWNINFO* GetSpawn(int spawnid) {
+		if (spawnid < 0 || spawnid >= 5000)
+			return nullptr;
 		return reinterpret_cast<EQSPAWNINFO**>(0x0078c47c)[spawnid];
 	}
+	static inline void SaveMaterialColor(EQSPAWNINFO* entity, int wear_slot, DWORD color)
+	{
+		if (wear_slot >= 0 && wear_slot <= 8)
+			entity->EquipmentMaterialColor[wear_slot] = color;
+	}
+	static inline EQDAGINFO* GetDag(EQSPAWNINFO* entity, int wear_slot, bool alternate = false)
+	{
+		return reinterpret_cast<EQDAGINFO*(__stdcall*)(EQSPAWNINFO*, int, bool)>(0x4A00D9)(entity, wear_slot, alternate);
+	}
+	
 };
 
 class EQ_Character
@@ -342,7 +358,19 @@ EQ_Character** EQ_CLASS_ppEQ_Character = (EQ_Character**)EQ_POINTER_EQ_Character
 class EQ_Item
 {
 public:
-	//
+	static WORD GetItemMaterial(EQITEMINFO* item)
+	{
+		if (!item || item->IsContainer != 0)
+			return 0;
+
+		if (item->Common.Material)
+			return item->Common.Material;
+
+		if (item->IdFile[0] == 'I' && item->IdFile[1] == 'T' && item->IdFile[2] != '\0')
+			return atoi(&item->IdFile[2]);
+
+		return 0;
+	}
 };
 
 class EQ_Spell

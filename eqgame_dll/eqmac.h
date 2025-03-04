@@ -2053,13 +2053,14 @@ typedef struct _EQSPAWNINFO
 	/* 0x00B0 */ BYTE IsPlayerKill; // PVP flagged with red name by Priest of Discord
 	/* 0x00B1 */ BYTE StandingState; // EQ_STANDING_STATE_x
 	/* 0x00B2 */ BYTE LightType; // EQ_LIGHT_TYPE_x
-	/* 0x00B3 */ BYTE Unknown00B3;
+	/* 0x00B3 */ BYTE Face;
 	/* 0x00B4 */ WORD EquipmentMaterialType[7]; // EQ_EQUIPMENT_MATERIAL_TYPE_x ; Head,Chest,Arms,Wrist,Hands,Legs,Feet
 	/* 0x00C2 */ WORD EquipmentPrimaryItemType; // EQ_EQUIPMENT_ITEM_TYPE_x ; Primary
 	/* 0x00C4 */ WORD EquipmentSecondaryItemType; // EQ_EQUIPMENT_ITEM_TYPE_x ; Secondary
 	/* 0x00C6 */ WORD Unknown00C6;
-	/* 0x00C8 */ BYTE Unknown00C8[36];
-	/* 0x00EC */ DWORD Unknown00EC;
+	/* 0x00C8 */ DWORD EquipmentMaterialColor[9];
+	/* 0x00EC */ BYTE Texture;
+	/* 0x00ED */ BYTE Unknown00ED[3];
 	/* 0x00F0 */ FLOAT Height; // model height or size/scale (shrink, grow, etc)
 	/* 0x00F4 */ FLOAT Unknown00F4;
 	/* 0x00F8 */ FLOAT Unknown00F8;

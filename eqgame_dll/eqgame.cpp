@@ -138,6 +138,32 @@ void PatchSwap(int target, BYTE* source, SIZE_T size, BYTE* buffer = nullptr)
 	VirtualProtect((PVOID*)target, size, oldprotect, &oldprotect);
 }
 
+// start_address (Inclusive), until_address (Exclusive)
+void PatchNopByRange(int start_address, int until_address) {
+
+	int size = until_address - start_address;
+	if (size <= 0) {
+		return;
+	}
+
+	int target = start_address;
+	BYTE nop2[] = { 0x66, 0x90 }; // 0x66 0x99 (safe, officially recognized as a 2-byte NOP).
+
+	DWORD oldprotect;
+	VirtualProtect((PVOID*)start_address, size, PAGE_EXECUTE_READWRITE, &oldprotect);
+
+	while (size >= 2) {
+		memcpy((void*)target, nop2, 2);
+		size -= 2;
+		target += 2;
+	}
+	if (size == 1) {
+		memcpy((void*)target, &nop2[1], 1);
+	}
+
+	VirtualProtect((PVOID*)start_address, size, oldprotect, &oldprotect);
+}
+
 void UpdateTitle()
 {
 	if (new_title.length() == 0) {
@@ -591,7 +617,7 @@ public:
 		if(Opcode==0x4052) {//OP_ItemOnCorpse
 			return msg_send_corpse_equip((EQ_Equipment*)Buffer);
 		}
-		if (Opcode == 0x4038) { // OP_ShopDelItem=0x3840
+		else if (Opcode == 0x4038) { // OP_ShopDelItem=0x3840
 			if (!*(BYTE*)0x8092D8) {
 				return NULL;
 				// stone skin UI doesn't like this
@@ -648,11 +674,17 @@ public:
 				}
 			}
 		}*/
-		if (Opcode == 0x41d8) { // OP_LogServer=0xc341
+		else if (Opcode == 0x41d8) { // OP_LogServer=0xc341
 			can_fullscreen = true;
 #ifdef LOGGING
 			WriteLog("EQGAME: CEverQuest__HandleWorldMessage_Detour OP_LogServer=0xc341 Can go Fullscreen (1)");
 #endif
+		}
+		else if (Opcode == 0x4092 && len >= 12)
+		{
+			WearChange_Struct* wc = (WearChange_Struct*)Buffer;
+			if (Handle_In_OP_WearChange(wc))
+				return 1;
 		}
 		return CEverQuest__HandleWorldMessage_Trampoline(con,Opcode,Buffer,len);
 	}
@@ -3194,6 +3226,130 @@ void ApplySongWindowBytePatches() {
 // Buff Patch [End]
 // ---------------------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------------------
+// Appearance Fixes/Support
+// - Helmet/Weapon Tint Support
+// ---------------------------------------------------------------------------------------
+
+constexpr BYTE kMaterialSlotHead = 0;
+constexpr BYTE kMaterialSlotPrimary = 7;
+constexpr BYTE kMaterialSlotSecondary = 8; // Shared with 'ranged'
+
+constexpr WORD kMaterialNone = 0;
+constexpr WORD kMaterialLeather = 1;
+constexpr WORD kMaterialChain = 2;
+constexpr WORD kMaterialPlate = 3;
+constexpr WORD kMaterialVeliousHelm = 240;
+constexpr WORD kMaterialVeliousHelmAlternate = 241; // A couple races support alternate helms
+
+constexpr DWORD kColorNone = 0;
+constexpr DWORD kColorDefault = 0x00FFFFFF;
+
+typedef int (__fastcall* EQ_FUNCTION_TYPE_SwapHead)(int* cDisplay, int unused_edx, EQSPAWNINFO* entity, int new_material, int old_material, DWORD color, bool from_server);
+EQ_FUNCTION_TYPE_SwapHead SwapHead_Trampoline;
+int __fastcall SwapHead_Detour(int* cDisplay, int unused_edx, EQSPAWNINFO* entity, int new_material, int old_material, DWORD color, bool from_server)
+{
+	if (entity->Texture == 0xFF)
+	{
+		EQPlayer::SaveMaterialColor(entity, kMaterialSlotHead, color);
+	}
+
+	return SwapHead_Trampoline(cDisplay, unused_edx, entity, new_material, old_material, color, from_server);
+}
+
+// Called when changing armor textures (head chest arms legs feet hands).
+// On character select screen, also called for weapons slots.
+typedef void (__fastcall* EQ_FUNCTION_TYPE_WearChangeArmor)(int* cDisplay, int unused_edx, EQSPAWNINFO* entity, int wear_slot, WORD new_material, WORD old_material, DWORD colors, bool from_server);
+EQ_FUNCTION_TYPE_WearChangeArmor WearChangeArmor_Trampoline;
+void __fastcall WearChangeArmor_Detour(int* cDisplay, int unused_edx, EQSPAWNINFO* entity, int wear_slot, WORD new_material, WORD old_material, DWORD colors, bool from_server)
+{
+	if (from_server && entity->Texture == 0xFF && entity == EQ_OBJECT_PlayerSpawn)
+	{
+		// Update tint cache (This line is needed for character select scren tints)
+		EQPlayer::SaveMaterialColor(entity, wear_slot, colors);
+	}
+
+	WearChangeArmor_Trampoline(cDisplay, unused_edx, entity, wear_slot, new_material, old_material, colors, from_server);
+}
+
+typedef int (__fastcall* EQ_FUNCTION_TYPE_SwapModel)(int* cdisplay, int unused, EQSPAWNINFO* entity, BYTE wear_slot, char* ITstr, bool from_server);
+EQ_FUNCTION_TYPE_SwapModel SwapModel_Trampoline;
+int __fastcall SwapModel_Detour(int* cDisplay, int unused, EQSPAWNINFO* entity, BYTE wear_slot, char* ITstr, bool from_server)
+{
+	int material = ITstr && strlen(ITstr) > 2 ? atoi(&ITstr[2]) : 0;
+	bool is_weapon_slot = wear_slot == kMaterialSlotPrimary || wear_slot == kMaterialSlotSecondary;
+	bool is_tint_slot = is_weapon_slot || (wear_slot == kMaterialSlotHead && entity->Texture == 0xFF);
+
+	if (!from_server && is_weapon_slot && entity == EQ_OBJECT_PlayerSpawn && EQ_OBJECT_CharInfo)
+	{
+		// This is reached when an item was swapped by the user equipping a new item through the UI.
+		// We aren't given the color of the item in this scenario, so we have to look it up by matching the IT# to the equipped item in primary/secondary/range slot.
+		// In all other Scenarios, we already know the color because we got an OP_WearChange event, so we can skip this logic.
+		EQINVENTORY& inv = EQ_OBJECT_CharInfo->Inventory;
+		if (material == kMaterialNone)
+			EQPlayer::SaveMaterialColor(entity, wear_slot, kColorNone);
+		else if (wear_slot == kMaterialSlotPrimary)
+			EQPlayer::SaveMaterialColor(entity, wear_slot, inv.Primary ? inv.Primary->Common.Color : kColorNone);
+		else if (EQ_Item::GetItemMaterial(inv.Secondary) == material)
+			EQPlayer::SaveMaterialColor(entity, wear_slot, inv.Secondary ? inv.Secondary->Common.Color : kColorNone);
+		else if (EQ_Item::GetItemMaterial(inv.Ranged) == material)
+			EQPlayer::SaveMaterialColor(entity, wear_slot, inv.Ranged ? inv.Ranged->Common.Color : kColorNone);
+	}
+
+	int result = SwapModel_Trampoline(cDisplay, unused, entity, wear_slot, ITstr, from_server);
+
+	// After models are swapped, apply tint to the Helm and Weapon slots.
+	if (material > kMaterialNone && is_tint_slot)
+	{
+		DWORD color = entity->EquipmentMaterialColor[wear_slot];
+		DWORD tint = color == kColorNone ? kColorDefault : color;
+		EQDAGINFO* dag = EQPlayer::GetDag(entity, wear_slot);
+		if (dag)
+			CDisplay::SetDagSpriteTint(dag, tint);
+		if (wear_slot == kMaterialSlotSecondary && entity->ActorInfo && entity->ActorInfo->DagShieldPoint) // Also tint shields
+			CDisplay::SetDagSpriteTint(entity->ActorInfo->DagShieldPoint, tint);
+	}
+
+	return result;
+}
+
+// Callback for server WearChange packets. It immediately calls HandleWearChangeArmor for non-weapon slots.
+bool Handle_In_OP_WearChange(WearChange_Struct* wc)
+{
+	if (!wc)
+		return false;
+
+	EQSPAWNINFO* entity = EQPlayer::GetSpawn(wc->spawn_id);
+	if (!entity)
+		return false;
+
+	// Weapon color is not passed from OP_WearChange to any called method, so we have to save it from here.
+	if (wc->wear_slot_id == kMaterialSlotPrimary || wc->wear_slot_id == kMaterialSlotSecondary)
+		EQPlayer::SaveMaterialColor(entity, wc->wear_slot_id, wc->color);
+	return false;
+}
+
+void ApplyTintPatches()
+{
+	// GetVeliousHelmMaterialIT_4A1512(entity, material, *show_hair)
+	// - (1) Disables hair becoming invisible on the shared default head. Prevents "show_hair = false" happening with Velious helms.
+	PatchNopByRange(0x4A159B, 0x4A159D); // '*show_hair = 0' -> No-OP
+	PatchNopByRange(0x4A16D2, 0x4A16D4); // '*show_hair = 0' -> No-OP
+	// - (2) Enables Velious Helms showing on Character Select. Prevents returning early if char_info is null.
+	PatchNopByRange(0x4A152B, 0x4A1533); // 'if (!char_info) return 3'; -> No-OP
+	PatchNopByRange(0x4A153E, 0x4A154B); // 'if ((char_info->Unknown0D3C & 0x1E) == 0) return 3;' -> No-OP
+
+	// ChangeDag()
+	// - Unlocks proper tinting for IT# model helms/weapons below IT# number 1000:
+	// - IT# models under ID 1000 used shared memory in their tint storage, so setting the tint on one model affected all models in the zone.
+	BYTE patch_dword_1[4] = { 1, 0, 0, 0 };
+	PatchSwap(0x4B094E + 3, patch_dword_1, 4);
+}
+
+// ---------------------------------------------------------------------------------------
+// Tint Support [End]
+// ---------------------------------------------------------------------------------------
+
 DWORD gmfadress = 0;
 DWORD wpsaddress = 0;
 DWORD swAddress = 0;
@@ -3422,6 +3578,12 @@ void InitHooks()
 	ActivateUICallbacks.push_back(ShowBuffWindow_ActivateUI);
 	CleanUpUICallbacks.push_back(ShortBuffWindow_CleanUI);
 	DeactivateUICallbacks.push_back(ShowBuffWindow_DeactivateUI);
+
+	// Appearance / Tint Support
+	SwapHead_Trampoline = (EQ_FUNCTION_TYPE_SwapHead)DetourFunction((PBYTE)0x4A1735, (PBYTE)SwapHead_Detour);
+	SwapModel_Trampoline = (EQ_FUNCTION_TYPE_SwapModel)DetourFunction((PBYTE)0x4A9EB3, (PBYTE)SwapModel_Detour);
+	WearChangeArmor_Trampoline = (EQ_FUNCTION_TYPE_WearChangeArmor)DetourFunction((PBYTE)0x4A2A7A, (PBYTE)WearChangeArmor_Detour);
+	ApplyTintPatches();
 
 	return_ProcessMouseEvent = (ProcessGameEvents_t)DetourFunction((PBYTE)o_MouseEvents, (PBYTE)ProcessMouseEvent_Hook);
 	//return_SetMouseCenter = (ProcessGameEvents_t)DetourFunction((PBYTE)o_MouseCenter, (PBYTE)SetMouseCenter_Hook);
