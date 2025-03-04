@@ -1637,6 +1637,17 @@ void PatchSaveBypass()
 	//Changes the limit to 0x3E8 (1000) on race spawning to apply sounds and textures.
 	const char test17[] = { 0xE8, 0x03 };
 	PatchA((DWORD*)0x50704c, &test17, sizeof(test17));
+
+	////Patch the trampoline for untextured horse to check its validity. currently hardcoded to IDs in hook, but this bypasses the initial check. 11 nops.
+	//const char test18[] = { 0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90 };
+	//PatchA((DWORD*)0x51FC6D, &test18, sizeof(test18));
+	//PatchA((DWORD*)0x4AFA02, &test18, sizeof(test18));
+	//PatchA((DWORD*)0x51FE08, &test18, sizeof(test18));
+	//PatchA((DWORD*)0x51FDE6, &test18, sizeof(test18));
+	//PatchA((DWORD*)0x51FE86, &test18, sizeof(test18));
+	////Patch the check for Horse ID to allow for more IDs than just 216. 15 nops.
+	//const char test19[] = { 0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90 };
+	//PatchA((DWORD*)0x4B07D7, &test19, sizeof(test19));
 }
 
 typedef int(__cdecl *_s3dSetStringSpriteYonClip)(intptr_t, int, float);
@@ -1655,6 +1666,8 @@ int __cdecl s3dSetStringSpriteYonClip_Detour(intptr_t sprite, int a2, float dist
 
 	return s3dSetStringSpriteYonClip_Trampoline(sprite, a2, distance);
 }
+
+
 
 typedef unsigned __int64(__cdecl *_GetCpuSpeed2)();
 typedef float (__cdecl *_FastMathFunction)(float);
@@ -1838,6 +1851,26 @@ int __fastcall LegalPlayerRace_Detour(void* this_ptr, void* not_used, int a3) {
 	//	return 1;
 	//}
 	return LegalPlayerRace_Trampoline(this_ptr, a3);
+}
+
+typedef int(__thiscall* EQ_FUNCTION_TYPE_EQPlayer__HasInvalidRiderTexture)(void* this_ptr);
+EQ_FUNCTION_TYPE_EQPlayer__HasInvalidRiderTexture HasInvalidRiderTexture_Trampoline;
+int __fastcall HasInvalidRiderTexture_Detour(void* this_ptr, void* not_used) {
+	return false;
+}
+
+typedef int(__thiscall* EQ_FUNCTION_TYPE_EQPlayer__IsUntexturedHorse)(void* this_ptr);
+EQ_FUNCTION_TYPE_EQPlayer__IsUntexturedHorse IsUntexturedHorse_Trampoline;
+int __fastcall IsUntexturedHorse_Detour(void* this_ptr, void* not_used) {
+
+	if (this_ptr)
+	{
+		WORD ourRace = *(WORD*)((int)this_ptr + 0xAA);
+		if (ourRace == 500 || ourRace == 216)
+			return IsUntexturedHorse_Trampoline(this_ptr);
+	}
+
+	return false;
 }
 
 #define EQZoneInfo_AddZoneInfo 0x00523AEB
@@ -3368,6 +3401,8 @@ void InitHooks()
 	EQMACMQ_REAL_EQ_Character__CastSpell = (EQ_FUNCTION_TYPE_EQ_Character__CastSpell)DetourFunction((PBYTE)EQ_FUNCTION_EQ_Character__CastSpell, (PBYTE)EQMACMQ_DETOUR_EQ_Character__CastSpell);
 	heqwMod = GetModuleHandle("eqw.dll");
 	LegalPlayerRace_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__LegalPlayerRace)DetourFunction((PBYTE)0x0050BD9D, (PBYTE)LegalPlayerRace_Detour);
+	HasInvalidRiderTexture_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__HasInvalidRiderTexture)DetourFunction((PBYTE)0x0051FCA6, (PBYTE)HasInvalidRiderTexture_Detour);
+	//IsUntexturedHorse_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__HasInvalidRiderTexture)DetourFunction((PBYTE)0x0051FC6D, (PBYTE)IsUntexturedHorse_Detour);
 	EQZoneInfo_Ctor_Trampoline = (EQ_FUNCTION_TYPE_EQZoneInfo__EQZoneInfo)DetourFunction((PBYTE)0x005223C6, (PBYTE)EQZoneInfo_Ctor_Detour);
 	EQPlayer_GetActorTag_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer_GetActorTag)DetourFunction((PBYTE)0x0050845D, (PBYTE)EQPlayer_GetActorTag_Detour);
 
