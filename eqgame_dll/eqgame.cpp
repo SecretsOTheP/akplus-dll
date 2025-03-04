@@ -1633,6 +1633,10 @@ void PatchSaveBypass()
 	//Changes the limit to 0x3E8 (1000) on race animations.
 	const char test16[] = { 0xE8, 0x03 };
 	PatchA((DWORD*)0x4d93c5, &test16, sizeof(test16));
+
+	//Changes the limit to 0x3E8 (1000) on race spawning to apply sounds and textures.
+	const char test17[] = { 0xE8, 0x03 };
+	PatchA((DWORD*)0x50704c, &test17, sizeof(test17));
 }
 
 typedef int(__cdecl *_s3dSetStringSpriteYonClip)(intptr_t, int, float);
