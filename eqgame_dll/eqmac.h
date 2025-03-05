@@ -1584,13 +1584,17 @@ typedef struct _EQITEMBOOKINFO
 
 typedef struct _EQITEMINFO
 {
-	/* 0x0000 */ CHAR Name[64]; // [0x40]
-	/* 0x0040 */ CHAR LoreName[80]; // [0x50]
-	/* 0x0090 */ CHAR IdFile[6]; // [0x06]
-	/* 0x0096 */ BYTE Unknown0096[24];
-	/* 0x00AE */ BYTE Weight; // multiply by 0.1 for actual decimal weight
-	/* 0x00AF */ BYTE NoRent; // 0x00 = True, 0xFF = False
-	/* 0x00B0 */ BYTE NoDrop; // 0x00 = True, 0xFF = False
+	/*0x000*/	CHAR Name[64];
+	/*0x040*/	CHAR LoreName[80];
+	/*0x090*/	CHAR IdFile[16];
+	/*0x0a0*/	BYTE Unknown0a0[10];
+	/*0x0aa*/	BYTE InstrumentType;//check/***
+	/*0x0ab*/	BYTE Summoned;//check/***
+	/*0x0ac*/	BYTE Lore;//check/***
+	/*0x0ad*/	BYTE Magic;//check/***
+	/*0x0ae*/	BYTE Weight; // multiply by 0.1 for actual decimal weight
+	/*0x0af*/	BYTE NoRent; // 0x00 = True, 0xFF = False
+	/*0x0b0*/	BYTE NoDrop; // 0x00 = True, 0xFF = False
 	/* 0x00B1 */ BYTE Size; // EQ_ITEM_SIZE_x
 	/* 0x00B2 */ BYTE IsContainer;
 	/* 0x00B3 */ BYTE Unknown00B3;

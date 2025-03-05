@@ -338,10 +338,12 @@ public:
 			return nullptr;
 		return reinterpret_cast<EQSPAWNINFO**>(0x0078c47c)[spawnid];
 	}
-	static inline void SaveMaterialColor(EQSPAWNINFO* entity, int wear_slot, DWORD color)
+	static void SaveMaterialColor(EQSPAWNINFO* entity, int wear_slot, DWORD color)
 	{
 		if (wear_slot >= 0 && wear_slot <= 8)
+		{
 			entity->EquipmentMaterialColor[wear_slot] = color;
+		}
 	}
 	static inline EQDAGINFO* GetDag(EQSPAWNINFO* entity, int wear_slot, bool alternate = false)
 	{

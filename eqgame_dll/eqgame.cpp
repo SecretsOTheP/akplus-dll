@@ -121,8 +121,8 @@ std::map<DWORD,_detourinfo> ourdetours;
 void PatchA(LPVOID address, const void *dwValue, SIZE_T dwBytes) {
 	unsigned long oldProtect;
 	VirtualProtect((void *)address, dwBytes, PAGE_EXECUTE_READWRITE, &oldProtect);
-	FlushInstructionCache(GetCurrentProcess(), (void *)address, dwBytes);
 	memcpy((void *)address, dwValue, dwBytes);
+	FlushInstructionCache(GetCurrentProcess(), (void*)address, dwBytes);
 	VirtualProtect((void *)address, dwBytes, oldProtect, &oldProtect);
 }
 
@@ -611,18 +611,6 @@ public:
 		return CEQMusicManager__WavPlay_Trampoline(wavIdx, soundControl);
 	}
 
-	int __cdecl CEverQuest__SendMessage_Trampoline(int* connection, unsigned __int32 opcode, char* buffer, unsigned __int32 len, int unknown);
-	int __cdecl CEverQuest__SendMessage_Detour(int* connection, unsigned __int32 opcode, char* buffer, unsigned __int32 len, int unknown)
-	{
-		if (opcode == 0x4092 && len >= 12) // OP_WearChange
-		{
-			WearChange_Struct* wc = (WearChange_Struct*)buffer;
-			if (Handle_Out_OP_WearChange(wc))
-				return 0;
-		}
-		return CEverQuest__SendMessage_Trampoline(connection, opcode, buffer, len, unknown);
-	}
-
 	unsigned char CEverQuest__HandleWorldMessage_Trampoline(DWORD *,unsigned __int32,char *,unsigned __int32);
 	unsigned char CEverQuest__HandleWorldMessage_Detour(DWORD *con,unsigned __int32 Opcode,char *Buffer,unsigned __int32 len)
 	{
@@ -693,11 +681,9 @@ public:
 			WriteLog("EQGAME: CEverQuest__HandleWorldMessage_Detour OP_LogServer=0xc341 Can go Fullscreen (1)");
 #endif
 		}
-		else if (Opcode == 0x4092 && len >= 12)
+		else if (Opcode == 0x4092 && len >= sizeof(WearChange_Struct))
 		{
-			WearChange_Struct* wc = (WearChange_Struct*)Buffer;
-			if (Handle_In_OP_WearChange(wc))
-				return 1;
+			Handle_In_OP_WearChange((WearChange_Struct*)Buffer);
 		}
 		return CEverQuest__HandleWorldMessage_Trampoline(con,Opcode,Buffer,len);
 	}
@@ -930,7 +916,6 @@ public:
 	}
 };
 
-DETOUR_TRAMPOLINE_EMPTY(int __cdecl Eqmachooks::CEverQuest__SendMessage_Trampoline(int*, unsigned __int32, char*, unsigned __int32, int));
 DETOUR_TRAMPOLINE_EMPTY(unsigned char Eqmachooks::CEverQuest__HandleWorldMessage_Trampoline(DWORD *,unsigned __int32,char *,unsigned __int32));
 DETOUR_TRAMPOLINE_EMPTY(int Eqmachooks::CEQMusicManager__Set_Trampoline(int, int, int, int, int, int, int, int, int));
 DETOUR_TRAMPOLINE_EMPTY(int Eqmachooks::CEQMusicManager__Play_Trampoline(int, int));
@@ -960,6 +945,18 @@ DETOUR_TRAMPOLINE_EMPTY(int Eqmachooks::CDisplay__StartWorldDisplay_Trampoline(i
 EQ_FUNCTION_TYPE_CBuffWindow__RefreshBuffDisplay  EQMACMQ_REAL_CBuffWindow__RefreshBuffDisplay = NULL;
 EQ_FUNCTION_TYPE_CBuffWindow__PostDraw            EQMACMQ_REAL_CBuffWindow__PostDraw = NULL;
 EQ_FUNCTION_TYPE_EQ_Character__CastSpell EQMACMQ_REAL_EQ_Character__CastSpell = NULL;
+
+typedef int(__cdecl* EQ_FUNCTION_TYPE_CEverQuest__SendMessage)(int* connection, int opcode, char* buffer, size_t len, int unknown);
+EQ_FUNCTION_TYPE_CEverQuest__SendMessage CEverQuest__SendMessage_Trampoline;
+int __cdecl CEverQuest__SendMessage_Detour(int* connection, int opcode, char* buffer, size_t len, int unknown)
+{
+	if (opcode == 0x4092 && len >= 12) // OP_WearChange
+	{
+		if (Handle_Out_OP_WearChange((WearChange_Struct*)buffer))
+			return 0;
+	}
+	return CEverQuest__SendMessage_Trampoline(connection, opcode, buffer, len, unknown);
+}
 
 class CCharacterSelectWnd;
 
@@ -3419,14 +3416,13 @@ bool IsHelmPatchedOldModel(WORD race, BYTE gender)
 	return false;
 }
 
-typedef int (__fastcall* EQ_FUNCTION_TYPE_SwapHead)(int* cDisplay, int unused_edx, EQSPAWNINFO* entity, int new_material, int old_material, DWORD color, bool from_server);
+typedef int(__thiscall* EQ_FUNCTION_TYPE_SwapHead)(int* cDisplay, EQSPAWNINFO* entity, int new_material, int old_material, DWORD color, bool from_server);
 EQ_FUNCTION_TYPE_SwapHead SwapHead_Trampoline;
 int __fastcall SwapHead_Detour(int* cDisplay, int unused_edx, EQSPAWNINFO* entity, int new_material, int old_material_or_head, DWORD color, bool from_server)
 {
 	bool use_bald_head = false; // On races with buggy Velious helms, we will try to use the bald head underneath the helm to fix clipping (see 3a).
-	bool playable_race = entity->Texture = 0xFF; // Most logic only needs to apply on playable races.
 
-	if (playable_race)
+	if (entity->Texture == 0xFF) // Most logic only needs to apply on playable races.
 	{
 		// (1) Fixes the old head from getting desync'd/stuck. We can manually detect the current head which ensures that SwapHead always works (requires the old head value to be accurate).
 		old_material_or_head = EQPlayer::GetHeadID(entity, old_material_or_head);
@@ -3449,7 +3445,7 @@ int __fastcall SwapHead_Detour(int* cDisplay, int unused_edx, EQSPAWNINFO* entit
 	}
 
 	// Call SwapHead()
-	int result = SwapHead_Trampoline(cDisplay, unused_edx, entity, new_material, old_material_or_head, color, from_server);
+	int result = SwapHead_Trampoline(cDisplay, entity, new_material, old_material_or_head, color, from_server);
 
 	// (5) Fixes SwapHead() to save material values correctly when material >255. The original method only sets the lo-byte, but the storage supports uint16.
 	entity->EquipmentMaterialType[kMaterialSlotHead] = new_material;
@@ -3465,9 +3461,9 @@ int __fastcall SwapHead_Detour(int* cDisplay, int unused_edx, EQSPAWNINFO* entit
 
 // Called when changing armor textures (head chest arms legs feet hands).
 // On character select screen, also called for weapons slots.
-typedef void (__fastcall* EQ_FUNCTION_TYPE_WearChangeArmor)(int* cDisplay, int unused_edx, EQSPAWNINFO* entity, int wear_slot, WORD new_material, WORD old_material, DWORD colors, bool from_server);
+typedef void(__thiscall* EQ_FUNCTION_TYPE_WearChangeArmor)(int* cDisplay, EQSPAWNINFO* entity, int wear_slot, WORD new_material, WORD old_material, DWORD colors, bool from_server);
 EQ_FUNCTION_TYPE_WearChangeArmor WearChangeArmor_Trampoline;
-void __fastcall WearChangeArmor_Detour(int* cDisplay, int unused_edx, EQSPAWNINFO* entity, int wear_slot, WORD new_material, WORD old_material, DWORD colors, bool from_server)
+void __fastcall WearChangeArmor_Detour(int* cDisplay, int unused_edx, EQSPAWNINFO* entity, BYTE wear_slot, WORD new_material, WORD old_material, DWORD colors, bool from_server)
 {
 	int block_wearchange = 0;
 	if (from_server && entity->Texture == 0xFF && entity == EQ_OBJECT_PlayerSpawn)
@@ -3479,36 +3475,44 @@ void __fastcall WearChangeArmor_Detour(int* cDisplay, int unused_edx, EQSPAWNINF
 		EQPlayer::SaveMaterialColor(entity, wear_slot, colors);
 	}
 
-	block_outbound_wearchange += block_outbound_wearchange;
-	WearChangeArmor_Trampoline(cDisplay, unused_edx, entity, wear_slot, new_material, old_material, colors, from_server);
-	block_outbound_wearchange -= block_outbound_wearchange;
+	block_outbound_wearchange += block_wearchange;
+	WearChangeArmor_Trampoline(cDisplay, entity, wear_slot, new_material, old_material, colors, from_server);
+	block_outbound_wearchange -= block_wearchange;
 }
 
-typedef int (__fastcall* EQ_FUNCTION_TYPE_SwapModel)(int* cdisplay, int unused, EQSPAWNINFO* entity, BYTE wear_slot, char* ITstr, bool from_server);
+typedef int(__thiscall* EQ_FUNCTION_TYPE_SwapModel)(int* cdisplay, EQSPAWNINFO* entity, int wear_slot, char* ITstr, int from_server);
 EQ_FUNCTION_TYPE_SwapModel SwapModel_Trampoline;
-int __fastcall SwapModel_Detour(int* cDisplay, int unused, EQSPAWNINFO* entity, BYTE wear_slot, char* ITstr, bool from_server)
+int __fastcall SwapModel_Detour(int* cDisplay, int unused, EQSPAWNINFO* entity, BYTE wear_slot, char* ITstr, int from_server)
 {
-	int material = ITstr && strlen(ITstr) > 2 ? atoi(&ITstr[2]) : 0;
+	int material = (ITstr && strlen(ITstr) > 2) ? atoi(&ITstr[2]) : 0;
 	bool is_weapon_slot = wear_slot == kMaterialSlotPrimary || wear_slot == kMaterialSlotSecondary;
 	bool is_tint_slot = is_weapon_slot || (wear_slot == kMaterialSlotHead && entity->Texture == 0xFF);
 
-	if (!from_server && is_weapon_slot && entity == EQ_OBJECT_PlayerSpawn && EQ_OBJECT_CharInfo)
+	if (from_server == 0 && is_weapon_slot && entity == EQ_OBJECT_PlayerSpawn && EQ_OBJECT_CharInfo)
 	{
 		// This is reached when an item was swapped by the user equipping a new item through the UI.
 		// We aren't given the color of the item in this scenario, so we have to look it up by matching the IT# to the equipped item in primary/secondary/range slot.
 		// In all other Scenarios, we already know the color because we got an OP_WearChange event, so we can skip this logic.
 		EQINVENTORY& inv = EQ_OBJECT_CharInfo->Inventory;
 		if (material == kMaterialNone)
+		{
 			EQPlayer::SaveMaterialColor(entity, wear_slot, kColorNone);
+		}
 		else if (wear_slot == kMaterialSlotPrimary)
+		{
 			EQPlayer::SaveMaterialColor(entity, wear_slot, inv.Primary ? inv.Primary->Common.Color : kColorNone);
+		}
 		else if (EQ_Item::GetItemMaterial(inv.Secondary) == material)
+		{
 			EQPlayer::SaveMaterialColor(entity, wear_slot, inv.Secondary ? inv.Secondary->Common.Color : kColorNone);
+		}
 		else if (EQ_Item::GetItemMaterial(inv.Ranged) == material)
+		{
 			EQPlayer::SaveMaterialColor(entity, wear_slot, inv.Ranged ? inv.Ranged->Common.Color : kColorNone);
+		}
 	}
 
-	int result = SwapModel_Trampoline(cDisplay, unused, entity, wear_slot, ITstr, from_server);
+	int result = SwapModel_Trampoline(cDisplay, entity, wear_slot, ITstr, from_server);
 
 	// After models are swapped, apply tint to the Helm and Weapon slots.
 	if (material > kMaterialNone && is_tint_slot)
@@ -3517,9 +3521,13 @@ int __fastcall SwapModel_Detour(int* cDisplay, int unused, EQSPAWNINFO* entity, 
 		DWORD tint = color == kColorNone ? kColorDefault : color;
 		EQDAGINFO* dag = EQPlayer::GetDag(entity, wear_slot);
 		if (dag)
+		{
 			CDisplay::SetDagSpriteTint(dag, tint);
+		}
 		if (wear_slot == kMaterialSlotSecondary && entity->ActorInfo && entity->ActorInfo->DagShieldPoint) // Also tint shields
+		{
 			CDisplay::SetDagSpriteTint(entity->ActorInfo->DagShieldPoint, tint);
+		}
 	}
 
 	return result;
@@ -3537,7 +3545,9 @@ bool Handle_In_OP_WearChange(WearChange_Struct* wc)
 
 	// Weapon color is not passed from OP_WearChange to any called method, so we have to save it from here.
 	if (wc->wear_slot_id == kMaterialSlotPrimary || wc->wear_slot_id == kMaterialSlotSecondary)
+	{
 		EQPlayer::SaveMaterialColor(entity, wc->wear_slot_id, wc->color);
+	}
 	return false;
 }
 
@@ -3550,7 +3560,6 @@ bool Handle_Out_OP_WearChange(WearChange_Struct* wc)
 	if (!self)
 		return false;
 
-	// Fixes outbound weapons to include the current tint
 	if (wc->wear_slot_id == kMaterialSlotHead)
 	{
 		if (block_outbound_wearchange > 0)
@@ -3558,15 +3567,19 @@ bool Handle_Out_OP_WearChange(WearChange_Struct* wc)
 
 		if (self->Texture == 0xFF && wc->material >= kMaterialVeliousHelm)
 		{
-			wc->material = ToCanonicalHelmMaterial(wc->material, self->Race)
+			// Ensure helm tint is sent for custom helms
+			wc->material = ToCanonicalHelmMaterial(wc->material, self->Race);
 			wc->color = self->EquipmentMaterialColor[kMaterialSlotHead];
 		}
 	}
 	else if (wc->wear_slot_id == kMaterialSlotPrimary || wc->wear_slot_id == kMaterialSlotSecondary)
 	{
-		wc->color = self->EquipmentMaterialColor[wc->wear_slot_id];
+		// Fixes outbound weapons to include the current tint
+		if (wc->material > 0)
+			wc->color = self->EquipmentMaterialColor[wc->wear_slot_id];
+		else
+			wc->color = 0;
 	}
-
 	return false; // Continue processing this OP_WearChange, sending the message.
 }
 
@@ -3779,7 +3792,7 @@ void InitHooks()
 	EzDetour(cwAddress, CreateWindowExA_Detour, CreateWindowExA_Trampoline);
 	//here to fix the no items on corpse bug - eqmule
 	EzDetour(0x004E829F, &Eqmachooks::CEverQuest__HandleWorldMessage_Detour, &Eqmachooks::CEverQuest__HandleWorldMessage_Trampoline);
-	EzDetour(EQ_FUNCTION_send_message, &Eqmachooks::CEverQuest__SendMessage_Detour, &Eqmachooks::CEverQuest__SendMessage_Trampoline);
+	CEverQuest__SendMessage_Trampoline = (EQ_FUNCTION_TYPE_CEverQuest__SendMessage)DetourFunction((PBYTE)0x54E51A, (PBYTE)CEverQuest__SendMessage_Detour);
 	EzDetour(gmfadress, GetModuleFileNameA_detour, GetModuleFileNameA_tramp);
 	EzDetour(wpsaddress, WritePrivateProfileStringA_detour, WritePrivateProfileStringA_tramp);
 
