@@ -3373,7 +3373,6 @@ int __fastcall SwapHead_Detour(int* cDisplay, int unused_edx, EQSPAWNINFO* entit
 		if (use_bald_head)
 		{
 			PatchSwap(0x4A1C65 + 1, BYTE_BALD_HEAD, 1); // Changes default head 0 -> 5
-			print_chat("Using head 5");
 		}
 
 		// (3) Fixes a bug that double-sends packets on materials below 240. Suppresses the extra packet (which also contains the wrong value).
