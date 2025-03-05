@@ -3318,6 +3318,7 @@ bool DetectHelmFixes()
 	UseEruditeMaleFix     = (AllLuclinPcModelsOff || !UseLuclinEruditeMale)     && Graphics::t3dGetPointerFromDictionary(kEruditeMaleBaldHead);
 	UseWoodElfFemaleFix   = (AllLuclinPcModelsOff || !UseLuclinWoodElfFemale)   && Graphics::t3dGetPointerFromDictionary(kWoodElfFemaleBaldHead);
 	UseDarkElfFemaleFix   = (AllLuclinPcModelsOff || !UseLuclinDarkElfFemale)   && Graphics::t3dGetPointerFromDictionary(kDarkElfFemaleBaldHead);
+	DetectHelmFixesComplete = true;
 }
 
 bool IsHelmPatchedOldModel(WORD race, BYTE gender)
