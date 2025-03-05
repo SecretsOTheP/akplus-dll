@@ -3493,6 +3493,9 @@ bool Handle_Out_OP_WearChange(WearChange_Struct* wc)
 	{
 		if (block_outbound_wearchange > 0)
 			return true; // Stop processing this OP_WearChange, preventing the message from being sent.
+
+		if (self->Texture == 0xFF && wc->material >= kMaterialVeliousHelm)
+			wc->color = self->EquipmentMaterialColor[kMaterialSlotHead];
 	}
 	else if (wc->wear_slot_id == kMaterialSlotPrimary || wc->wear_slot_id == kMaterialSlotSecondary)
 	{
