@@ -3281,6 +3281,68 @@ bool UseEruditeFemaleFix = false;
 bool UseWoodElfFemaleFix = false;
 bool UseDarkElfFemaleFix = false;
 
+// Helper function. Converts Velious Helms to their common values.
+// We only send the canonical values to the server and other players.
+// - [5xx/6xx] -> [240] Swaps our racial Velious head model IT### back to the generic '240' value used by all Velious helms.
+WORD ToCanonicalHelmMaterial(WORD material, WORD race)
+{
+	if ((race >= 1 && race <= 12) || race == 128 || race == 130)
+	{
+		switch (material)
+		{
+			// Vah Shir have their own material IDs when they equip leather/chain/plate helms, but no custom helm.
+		case 661: // VAH (F) Leather Helm
+		case 666: // VAH (M) Leather Helm
+			return kMaterialLeather; // (1)
+		case 662: // VAH (F) Chain Helm
+		case 667: // VAH (M) Chain Helm
+			return kMaterialChain; // (2)
+		case 663: // VAH (F) Plate Helm
+		case 668: // VAH (M) Plate Helm
+			return kMaterialPlate; // (3)
+
+			// Converts all the race-specific Velious Helm IT### numbers to the common 240 value
+		case 665: // vah
+		case 660: // vah
+		case 627: // hum
+		case 620: // hum
+		case 537: // bar
+		case 530: // bar
+		case 570: // eru
+		case 575: // eru
+		case 565: // elf
+		case 561: // elf
+		case 605: // hie
+		case 600: // hie
+		case 545: // def
+		case 540: // def
+		case 595: // hef
+		case 590: // hef
+		case 557: // dwf
+		case 550: // dwf
+		case 655: // trl
+		case 650: // trl
+		case 645: // ogr
+		case 640: // ogr
+		case 615: // hlf
+		case 610: // hlf
+		case 585: // gnm
+		case 580: // gnm
+		case 635: // iks
+		case 630: // iks
+			if (race == 130) // vah
+				return kMaterialPlate;
+			return kMaterialVeliousHelm;
+		case 641: // OGR (F) Alternate Helm (Barbarian/RZ look)
+		case 646: // OGR (M) Alternate Helm (Barbarian/RZ look)
+			if (race == 10) // ogre
+				return kMaterialVeliousHelmAlternate;
+			return kMaterialVeliousHelm;
+		}
+	}
+	return material;
+}
+
 bool HelmHelperIsEnabled(char* key)
 {
 	char szResult[255];
@@ -3319,6 +3381,7 @@ bool DetectHelmFixes()
 	UseWoodElfFemaleFix   = (AllLuclinPcModelsOff || !UseLuclinWoodElfFemale)   && Graphics::t3dGetPointerFromDictionary(kWoodElfFemaleBaldHead);
 	UseDarkElfFemaleFix   = (AllLuclinPcModelsOff || !UseLuclinDarkElfFemale)   && Graphics::t3dGetPointerFromDictionary(kDarkElfFemaleBaldHead);
 	DetectHelmFixesComplete = true;
+	return true;
 }
 
 bool IsHelmPatchedOldModel(WORD race, BYTE gender)
@@ -3360,7 +3423,6 @@ typedef int (__fastcall* EQ_FUNCTION_TYPE_SwapHead)(int* cDisplay, int unused_ed
 EQ_FUNCTION_TYPE_SwapHead SwapHead_Trampoline;
 int __fastcall SwapHead_Detour(int* cDisplay, int unused_edx, EQSPAWNINFO* entity, int new_material, int old_material_or_head, DWORD color, bool from_server)
 {
-
 	bool use_bald_head = false; // On races with buggy Velious helms, we will try to use the bald head underneath the helm to fix clipping (see 3a).
 	bool playable_race = entity->Texture = 0xFF; // Most logic only needs to apply on playable races.
 
@@ -3495,7 +3557,10 @@ bool Handle_Out_OP_WearChange(WearChange_Struct* wc)
 			return true; // Stop processing this OP_WearChange, preventing the message from being sent.
 
 		if (self->Texture == 0xFF && wc->material >= kMaterialVeliousHelm)
+		{
+			wc->material = ToCanonicalHelmMaterial(wc->material, self->Race)
 			wc->color = self->EquipmentMaterialColor[kMaterialSlotHead];
+		}
 	}
 	else if (wc->wear_slot_id == kMaterialSlotPrimary || wc->wear_slot_id == kMaterialSlotSecondary)
 	{
