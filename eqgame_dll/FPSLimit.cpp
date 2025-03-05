@@ -20,7 +20,7 @@ DWORD TimeNow = 0;
 DWORD LastTime = 0;
 DWORD FrameTime=0;
 DWORD LastSleep=0;
-bool frame_limiter = true;
+bool frame_limiter = false;
 bool was_background = true;
 int __cdecl InitKeys(int a1);
 FUNCTION_AT_ADDRESS(int __cdecl InitKeys(int a1),0x55B7BC);
@@ -43,7 +43,7 @@ void LoadIniSettings()
 {
 	char szResult[255];
 	char szDefault[255];
-	sprintf(szDefault, "%d",60);
+	sprintf(szDefault, "%d",0);
 	DWORD error = GetPrivateProfileStringA("Options",  "MaxFPS", szDefault, szResult, 255, "./eqclient.ini");
 	if (GetLastError())
 	{
@@ -57,15 +57,21 @@ void LoadIniSettings()
 
 	if (gFG_MAX <= 0)
 		frame_limiter = false;
+
+	char szResultChatKeepAlive[255];
 	// turn on chat keepalive
-	sprintf(szDefault, "%d", 1);
-	WritePrivateProfileStringA("Defaults", "ChatKeepAlive", szDefault, "./eqclient.ini");
-	error = GetPrivateProfileStringA("Options", "NoFPSLimiter", szDefault, szResult, 255, "./eqclient.ini");
+	sprintf(szResultChatKeepAlive, "%d", 1);
+	WritePrivateProfileStringA("Defaults", "ChatKeepAlive", szResultChatKeepAlive, "./eqclient.ini");
+
+	char szResultFpsLimiter[255];
+	char szDefaultFpsLimiter[255];
+	sprintf(szDefaultFpsLimiter, "%d", 0);
+	error = GetPrivateProfileStringA("Options", "UseFPSLimiter", szDefaultFpsLimiter, szResultFpsLimiter, 255, "./eqclient.ini");
 	if (GetLastError())
 	{
-		WritePrivateProfileStringA("Options", "NoFPSLimiter", szDefault, "./eqclient.ini");
+		WritePrivateProfileStringA("Options", "UseFPSLimiter", szDefaultFpsLimiter, "./eqclient.ini");
 	}
-	frame_limiter = false;
+	frame_limiter = (bool)(atoi(szResultFpsLimiter));
 }
 
 void SetEQhWnd()
