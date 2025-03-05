@@ -149,6 +149,34 @@ EQCLOOTWND** EQ_OBJECT_ppCLootWnd = (EQCLOOTWND**)EQ_POINTER_CLootWnd;
 EQCSPELLBOOKWND** EQ_OBJECT_ppCSpellBookWnd = (EQCSPELLBOOKWND**)EQ_POINTER_CSpellBookWnd;
 #define EQ_OBJECT_CSpellBookWnd (*EQ_OBJECT_ppCSpellBookWnd)
 
+class Graphics
+{
+public:
+	static int* GetDisplay()
+	{
+		return *(int**)EQ_POINTER_CDisplay;
+	}
+	static bool IsWorldInitialized() {
+		return GetDisplay() && GetDisplay()[1] && *(int*)0x7F9A24 != 0;
+	}
+	static DWORD s3dGetNumSkinsAttachedToHierarchicalSprite(EQMODELINFO* actorModelInfo) {
+		return reinterpret_cast<DWORD(__cdecl*)(EQMODELINFO*)>(*(int*)0x7F9844)(actorModelInfo);
+	}
+	static int* s3dGetSkinAttachedToHierarchicalSprite(int index, EQMODELINFO* actorModelInfo) {
+		return reinterpret_cast<int* (__cdecl*)(int, EQMODELINFO*)>(*(int*)0x7F9848)(index, actorModelInfo);
+	}
+	static int* s3dGetDMSpriteDefinition(int* element) {
+		return reinterpret_cast<int* (__cdecl*)(int*)>(*(int*)0x7F9830)(element);
+	}
+	static int t3dGetObjectTag(int* graphics_object, char* out_tag) {
+		return reinterpret_cast<int(__cdecl*)(int*, char*)>(*(int*)0x7F9A20)(graphics_object, out_tag);
+	}
+	static int* t3dGetPointerFromDictionary(const char* key) {
+		return reinterpret_cast<int* (__cdecl*)(int, const char*)>(*(int*)0x7F9A24)(GetDisplay()[1], key);
+	}
+};
+
+class Graphics;
 class CXStr;
 class CXWndManager;
 class CSidlScreenWnd;
@@ -319,7 +347,33 @@ public:
 	{
 		return reinterpret_cast<EQDAGINFO*(__stdcall*)(EQSPAWNINFO*, int, bool)>(0x4A00D9)(entity, wear_slot, alternate);
 	}
-	
+	static int GetHeadID(EQSPAWNINFO* entity, int default_value)
+	{
+		if (!entity || !entity->ActorInfo || !entity->ActorInfo->ModelInfo)
+			return default_value;
+
+		char tag[32];
+		int num_skins = Graphics::s3dGetNumSkinsAttachedToHierarchicalSprite(entity->ActorInfo->ModelInfo);
+		for (int i = 0; i < num_skins; i++)
+		{
+			int* sprite = Graphics::s3dGetSkinAttachedToHierarchicalSprite(i, entity->ActorInfo->ModelInfo);
+			if (sprite && sprite[0] == 72) // Sprite->Type == 72
+			{
+				int* sprite_definition = Graphics::s3dGetDMSpriteDefinition(sprite);
+				if (sprite_definition)
+				{
+					Graphics::t3dGetObjectTag(sprite_definition, tag);
+					if (strlen(tag) > 7 && tag[3] == 'H' && tag[4] == 'E' && isdigit(tag[5]) && isdigit(tag[6]) && tag[7] == '_') // e.g. "ELFHE01_DMSPRITEDEF"
+					{
+						tag[7] = '\0';
+						int head = atoi(&tag[5]);
+						return head;
+					}
+				}
+			}
+		}
+		return default_value;
+	}
 };
 
 class EQ_Character

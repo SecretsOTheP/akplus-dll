@@ -161,6 +161,7 @@ void PatchNopByRange(int start_address, int until_address) {
 		memcpy((void*)target, &nop2[1], 1);
 	}
 
+	FlushInstructionCache(GetCurrentProcess(), (void*)start_address, size);
 	VirtualProtect((PVOID*)start_address, size, oldprotect, &oldprotect);
 }
 
@@ -404,7 +405,7 @@ void SendCustomSpawnAppearanceMessage(unsigned __int16 feature_id, unsigned __in
 		message.parameter &= 0x7FFFFFFFu;
 	else
 		message.parameter |= 0x80000000u;
-	reinterpret_cast<void(__cdecl*)(int* connection, DWORD opcode, void* buffer, DWORD size, int unknown)>(0x54e51a)((int*)0x7952fc, 16629, &message, sizeof(SpawnAppearance_Struct), 0); // Connection::SendMessage(..)
+	reinterpret_cast<void(__cdecl*)(int* connection, DWORD opcode, void* buffer, DWORD size, int unknown)>(EQ_FUNCTION_send_message)((int*)0x7952fc, 16629, &message, sizeof(SpawnAppearance_Struct), 0); // Connection::SendMessage(..)
 }
 
 // Helper - Executes all callback handlers for custom SpawnAppearanceMessages
@@ -608,6 +609,18 @@ public:
 		}
 
 		return CEQMusicManager__WavPlay_Trampoline(wavIdx, soundControl);
+	}
+
+	int __cdecl CEverQuest__SendMessage_Trampoline(int* connection, unsigned __int32 opcode, char* buffer, unsigned __int32 len, int unknown);
+	int __cdecl CEverQuest__SendMessage_Detour(int* connection, unsigned __int32 opcode, char* buffer, unsigned __int32 len, int unknown)
+	{
+		if (opcode == 0x4092 && len >= 12) // OP_WearChange
+		{
+			WearChange_Struct* wc = (WearChange_Struct*)buffer;
+			if (Handle_Out_OP_WearChange(wc))
+				return 0;
+		}
+		return CEverQuest__SendMessage_Trampoline(connection, opcode, buffer, len, unknown);
 	}
 
 	unsigned char CEverQuest__HandleWorldMessage_Trampoline(DWORD *,unsigned __int32,char *,unsigned __int32);
@@ -917,6 +930,7 @@ public:
 	}
 };
 
+DETOUR_TRAMPOLINE_EMPTY(int __cdecl Eqmachooks::CEverQuest__SendMessage_Trampoline(int*, unsigned __int32, char*, unsigned __int32, int));
 DETOUR_TRAMPOLINE_EMPTY(unsigned char Eqmachooks::CEverQuest__HandleWorldMessage_Trampoline(DWORD *,unsigned __int32,char *,unsigned __int32));
 DETOUR_TRAMPOLINE_EMPTY(int Eqmachooks::CEQMusicManager__Set_Trampoline(int, int, int, int, int, int, int, int, int));
 DETOUR_TRAMPOLINE_EMPTY(int Eqmachooks::CEQMusicManager__Play_Trampoline(int, int));
@@ -3242,19 +3256,149 @@ constexpr WORD kMaterialPlate = 3;
 constexpr WORD kMaterialVeliousHelm = 240;
 constexpr WORD kMaterialVeliousHelmAlternate = 241; // A couple races support alternate helms
 
+// We install 'Bald' variation of heads with ID 05: "{racetag}HE05_DMSPRITEDEF". We swap to this head only when wearing a Velious Helm, to ensure hair clipping is fixed.
+constexpr WORD kMaterialBaldHead = 5;
+constexpr char kHumanFemaleBaldHead[] = "HUFHE05_DMSPRITEDEF"; // todo
+constexpr char kBarbarianFemaleBaldHead[] = "BAFHE05_DMSPRITEDEF"; // todo
+constexpr char kEruditeFemaleBaldHead[] = "ERFHE05_DMSPRITEDEF"; // todo
+constexpr char kEruditeMaleBaldHead[] = "ERMHE05_DMSPRITEDEF"; // done
+constexpr char kWoodElfFemaleBaldHead[] = "ELFHE05_DMSPRITEDEF"; // todo
+constexpr char kDarkElfFemaleBaldHead[] = "DAFHE05_DMSPRITEDEF"; // todo
+
 constexpr DWORD kColorNone = 0;
 constexpr DWORD kColorDefault = 0x00FFFFFF;
 
+BYTE BYTE_BALD_HEAD[1] = { kMaterialBaldHead };
+BYTE BYTE_NORMAL_HEAD[1] = { (BYTE)kMaterialNone };
+
+DWORD block_outbound_wearchange = 0;
+
+bool DetectHelmFixesComplete = false;
+bool UseHumanFemaleFix = false;
+bool UseBarbarianFemaleFix = false;
+bool UseEruditeMaleFix = false;
+bool UseEruditeFemaleFix = false;
+bool UseWoodElfFemaleFix = false;
+bool UseDarkElfFemaleFix = false;
+
+bool HelmHelperIsEnabled(char* key)
+{
+	char szResult[255];
+	char szDefault[255];
+	sprintf(szDefault, "%s", "FALSE");
+	DWORD error = GetPrivateProfileStringA("Defaults", key, szDefault, szResult, 255, "./eqclient.ini");
+	if (strcmp(szResult, "TRUE") == 0)
+		return true;
+	return false;
+}
+
+bool DetectHelmFixes()
+{
+	if (DetectHelmFixesComplete)
+		return true;
+
+	if (!Graphics::IsWorldInitialized())
+		return false;
+
+	// Check if a known-good value is loaded before continuing
+	int* sprite_definition = Graphics::t3dGetPointerFromDictionary("ELFHE00_DMSPRITEDEF");
+	if (!sprite_definition)
+		return false;
+
+	bool AllLuclinPcModelsOff = HelmHelperIsEnabled("AllLuclinPcModelsOff");
+	bool UseLuclinHumanFemale = HelmHelperIsEnabled("UseLuclinHumanFemale");
+	bool UseLuclinBarbarianFemale = HelmHelperIsEnabled("UseLuclinBarbarianFemale");
+	bool UseLuclinEruditeFemale = HelmHelperIsEnabled("UseLuclinEruditeFemale");
+	bool UseLuclinEruditeMale = HelmHelperIsEnabled("UseLuclinEruditeMale");
+	bool UseLuclinWoodElfFemale = HelmHelperIsEnabled("UseLuclinWoodElfFemale");
+	bool UseLuclinDarkElfFemale = HelmHelperIsEnabled("UseLuclinDarkElfFemale");
+	UseHumanFemaleFix     = (AllLuclinPcModelsOff || !UseLuclinHumanFemale)     && Graphics::t3dGetPointerFromDictionary(kHumanFemaleBaldHead);
+	UseBarbarianFemaleFix = (AllLuclinPcModelsOff || !UseLuclinBarbarianFemale) && Graphics::t3dGetPointerFromDictionary(kBarbarianFemaleBaldHead);
+	UseEruditeFemaleFix   = (AllLuclinPcModelsOff || !UseLuclinEruditeFemale)   && Graphics::t3dGetPointerFromDictionary(kEruditeFemaleBaldHead);
+	UseEruditeMaleFix     = (AllLuclinPcModelsOff || !UseLuclinEruditeMale)     && Graphics::t3dGetPointerFromDictionary(kEruditeMaleBaldHead);
+	UseWoodElfFemaleFix   = (AllLuclinPcModelsOff || !UseLuclinWoodElfFemale)   && Graphics::t3dGetPointerFromDictionary(kWoodElfFemaleBaldHead);
+	UseDarkElfFemaleFix   = (AllLuclinPcModelsOff || !UseLuclinDarkElfFemale)   && Graphics::t3dGetPointerFromDictionary(kDarkElfFemaleBaldHead);
+}
+
+bool IsHelmPatchedOldModel(WORD race, BYTE gender)
+{
+	if (!DetectHelmFixesComplete)
+	{
+		DetectHelmFixes(); // Have to lazy-load this here because this is reached before OnZone() is called during initial login.
+	}
+
+	// Bugged male races
+	if (gender == 0)
+	{
+		// Erudite
+		return race == 3 ? UseEruditeMaleFix : false;
+	}
+
+	// Bugged female races
+	if (gender == 1)
+	{
+		switch (race)
+		{
+		case 1: // Human
+			return UseHumanFemaleFix;
+		case 2: // Barbarian
+			return UseBarbarianFemaleFix;
+		case 3: // Erudite
+			return UseEruditeFemaleFix;
+		case 4: // Wood Elf
+			return UseWoodElfFemaleFix;
+		case 6: // Dark Elf
+			return UseDarkElfFemaleFix;
+		}
+	}
+
+	return false;
+}
+
 typedef int (__fastcall* EQ_FUNCTION_TYPE_SwapHead)(int* cDisplay, int unused_edx, EQSPAWNINFO* entity, int new_material, int old_material, DWORD color, bool from_server);
 EQ_FUNCTION_TYPE_SwapHead SwapHead_Trampoline;
-int __fastcall SwapHead_Detour(int* cDisplay, int unused_edx, EQSPAWNINFO* entity, int new_material, int old_material, DWORD color, bool from_server)
+int __fastcall SwapHead_Detour(int* cDisplay, int unused_edx, EQSPAWNINFO* entity, int new_material, int old_material_or_head, DWORD color, bool from_server)
 {
-	if (entity->Texture == 0xFF)
+
+	bool use_bald_head = false; // On races with buggy Velious helms, we will try to use the bald head underneath the helm to fix clipping (see 3a).
+	bool playable_race = entity->Texture = 0xFF; // Most logic only needs to apply on playable races.
+
+	if (playable_race)
 	{
+		// (1) Fixes the old head from getting desync'd/stuck. We can manually detect the current head which ensures that SwapHead always works (requires the old head value to be accurate).
+		old_material_or_head = EQPlayer::GetHeadID(entity, old_material_or_head);
+
+		// (2a) Fix broken Velious races by using a special head with no hair/hood graphics underneath their helmet. This stops their hair/hood clipping through the helm.
+		use_bald_head = new_material >= kMaterialVeliousHelm && IsHelmPatchedOldModel(entity->Race, entity->Gender);
+		if (use_bald_head)
+		{
+			PatchSwap(0x4A1C65 + 1, BYTE_BALD_HEAD, 1); // Changes default head 0 -> 5
+			print_chat("Using head 5");
+		}
+
+		// (3) Fixes a bug that double-sends packets on materials below 240. Suppresses the extra packet (which also contains the wrong value).
+		if (new_material < kMaterialVeliousHelm || block_outbound_wearchange > 0)
+		{
+			from_server = true; // This flag only controls whether the client generates a WearChange packet after swapping gear (true = local only, false = send packet)
+		}
+
+		// (4) Save the helmet color for tinting. SwapHead() calls SwapModel(), where we apply the tint. But the default SwapHead() saves the color too late, after calling SwapModel().
 		EQPlayer::SaveMaterialColor(entity, kMaterialSlotHead, color);
 	}
 
-	return SwapHead_Trampoline(cDisplay, unused_edx, entity, new_material, old_material, color, from_server);
+	// Call SwapHead()
+	int result = SwapHead_Trampoline(cDisplay, unused_edx, entity, new_material, old_material_or_head, color, from_server);
+
+	// (5) Fixes SwapHead() to save material values correctly when material >255. The original method only sets the lo-byte, but the storage supports uint16.
+	entity->EquipmentMaterialType[kMaterialSlotHead] = new_material;
+
+	// (2b) Unpatch the Change from (2a)
+	if (use_bald_head)
+	{
+		PatchSwap(0x4A1C65 + 1, BYTE_NORMAL_HEAD, 1); // Changes default head 5 -> 0
+	}
+
+	return result;
 }
 
 // Called when changing armor textures (head chest arms legs feet hands).
@@ -3263,13 +3407,19 @@ typedef void (__fastcall* EQ_FUNCTION_TYPE_WearChangeArmor)(int* cDisplay, int u
 EQ_FUNCTION_TYPE_WearChangeArmor WearChangeArmor_Trampoline;
 void __fastcall WearChangeArmor_Detour(int* cDisplay, int unused_edx, EQSPAWNINFO* entity, int wear_slot, WORD new_material, WORD old_material, DWORD colors, bool from_server)
 {
+	int block_wearchange = 0;
 	if (from_server && entity->Texture == 0xFF && entity == EQ_OBJECT_PlayerSpawn)
 	{
+		// Inbound WearChanges from the server shouldn't generate a response. However, the client doesn't respect 'from_server' flag on some helmets and replies anyway.
+		block_wearchange = 1;
+
 		// Update tint cache (This line is needed for character select scren tints)
 		EQPlayer::SaveMaterialColor(entity, wear_slot, colors);
 	}
 
+	block_outbound_wearchange += block_outbound_wearchange;
 	WearChangeArmor_Trampoline(cDisplay, unused_edx, entity, wear_slot, new_material, old_material, colors, from_server);
+	block_outbound_wearchange -= block_outbound_wearchange;
 }
 
 typedef int (__fastcall* EQ_FUNCTION_TYPE_SwapModel)(int* cdisplay, int unused, EQSPAWNINFO* entity, BYTE wear_slot, char* ITstr, bool from_server);
@@ -3327,6 +3477,29 @@ bool Handle_In_OP_WearChange(WearChange_Struct* wc)
 	if (wc->wear_slot_id == kMaterialSlotPrimary || wc->wear_slot_id == kMaterialSlotSecondary)
 		EQPlayer::SaveMaterialColor(entity, wc->wear_slot_id, wc->color);
 	return false;
+}
+
+bool Handle_Out_OP_WearChange(WearChange_Struct* wc)
+{
+	if (!wc)
+		return false;
+
+	EQSPAWNINFO* self = EQ_OBJECT_PlayerSpawn;
+	if (!self)
+		return false;
+
+	// Fixes outbound weapons to include the current tint
+	if (wc->wear_slot_id == kMaterialSlotHead)
+	{
+		if (block_outbound_wearchange > 0)
+			return true; // Stop processing this OP_WearChange, preventing the message from being sent.
+	}
+	else if (wc->wear_slot_id == kMaterialSlotPrimary || wc->wear_slot_id == kMaterialSlotSecondary)
+	{
+		wc->color = self->EquipmentMaterialColor[wc->wear_slot_id];
+	}
+
+	return false; // Continue processing this OP_WearChange, sending the message.
 }
 
 void ApplyTintPatches()
@@ -3538,6 +3711,7 @@ void InitHooks()
 	EzDetour(cwAddress, CreateWindowExA_Detour, CreateWindowExA_Trampoline);
 	//here to fix the no items on corpse bug - eqmule
 	EzDetour(0x004E829F, &Eqmachooks::CEverQuest__HandleWorldMessage_Detour, &Eqmachooks::CEverQuest__HandleWorldMessage_Trampoline);
+	EzDetour(EQ_FUNCTION_send_message, &Eqmachooks::CEverQuest__SendMessage_Detour, &Eqmachooks::CEverQuest__SendMessage_Trampoline);
 	EzDetour(gmfadress, GetModuleFileNameA_detour, GetModuleFileNameA_tramp);
 	EzDetour(wpsaddress, WritePrivateProfileStringA_detour, WritePrivateProfileStringA_tramp);
 

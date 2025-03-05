@@ -39,6 +39,7 @@ __declspec(dllexport) class CShortBuffWindow* GetShortDurationBuffWindow();
 
 // Tint Support
 bool Handle_In_OP_WearChange(WearChange_Struct* wc);
+bool Handle_Out_OP_WearChange(WearChange_Struct* wc);
 
 struct _EQBUFFINFO* GetStartBuffArray(bool songs_buffs);
 void MakeGetBuffReturnSongs(bool enabled);
