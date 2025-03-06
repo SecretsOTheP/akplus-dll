@@ -1923,7 +1923,7 @@ typedef struct _EQACTORINSTANCEINFO
 
 typedef struct _EQMODELINFO
 {
-	/* 0x0000 */ DWORD Unknown0000;
+	/* 0x0000 */ DWORD Type;
 	/* 0x0004 */ DWORD Unknown0004;
 	/* 0x0008 */ DWORD Unknown0008;
 	/* 0x000C */ DWORD Unknown000C;
@@ -1982,9 +1982,23 @@ typedef struct _EQACTORINFO
 	/* 0x00B4 */ FLOAT Unknown00B4;
 	/* 0x00B8 */ FLOAT Unknown00B8;
 	/* 0x00BC */ FLOAT MovementSpeedModifier; // how much slower/faster you move
-	/* 0x00C0 */ BYTE Unknown00C0[196];
+	/* 0x00C0 */ DWORD Timer00C0;
+	/* 0x00C4 */ DWORD StunnedUntilTime;
+	/* 0x00C8 */ DWORD Timer00C8;
+	/* 0x00CC */ DWORD CastingTimeout;
+	/* 0x00D0 */ BYTE Unknown00D0[8];
+	/* 0x00D8 */ DWORD RecastTimeout[8];
+	/* 0x00F8 */ BYTE Unknown00F8[104];
+	/* 0x0160 */ DWORD FizzleTimeout;
+	/* 0x0164 */ BYTE Unknown0164[24];
+	/* 0x017C */ struct _EQACTORINFO* ActorInfoPrototype;
+	/* 0x0180 */ BYTE Unknown0180[4];
 	/* 0x0184 */ DWORD Animation;
-	/* 0x0188 */ BYTE Unknown0188[44];
+	/* 0x0188 */ BYTE Unknown0188[8];
+	/* 0x0190 */ struct _EQSPAWNINFO* Boat; // unsure
+	/* 0x0194 */ struct _EQSPAWNINFO* Mount;
+	/* 0x0198 */ struct _EQSPAWNINFO* Rider;
+	/* 0x019C */ BYTE Unknown019c[24];
 	/* 0x01B4 */ DWORD IsInvisible; // NPCs only? used by /hidecorpses command
 	/* 0x01B8 */ BYTE Unknown01B8[168];
 	/* 0x0260 */ DWORD IsHoldingBoth;
@@ -2005,7 +2019,37 @@ typedef struct _EQACTORINFO
 	/* 0x0294 */ struct _EQDAGINFO* DagRightPoint;
 	/* 0x0298 */ struct _EQDAGINFO* DagLeftPoint;
 	/* 0x029C */ struct _EQDAGINFO* DagShieldPoint;
-	/* 0x02A0 */ BYTE Unknown02A0[128];
+	/* 0x02A0 */ struct _EQDAGINFO* BLD_DAG;
+	/* 0x02A4 */ struct _EQDAGINFO* Luclin_TUNIC_POINT_DAG;
+	/* 0x02A8 */ struct _EQDAGINFO* Luclin_HAIR_POINT_DAG;
+	/* 0x02AC */ struct _EQDAGINFO* Luclin_BEARD_POINT_DAG;
+	/* 0x02B0 */ struct _EQDAGINFO* Luclin_CHEST_POINT_DAG;
+	/* 0x02B4 */ struct _EQDAGINFO* Luclin_GAUNTL_POINT_DAG;
+	/* 0x02B8 */ struct _EQDAGINFO* Luclin_GAUNTR_POINT_DAG;
+	/* 0x02BC */ struct _EQDAGINFO* Luclin_SHOULDL_POINT_DAG;
+	/* 0x02C0 */ struct _EQDAGINFO* Luclin_SHOULDR_POINT_DAG;
+	/* 0x02C4 */ struct _EQDAGINFO* Luclin_LEGL_POINT_DAG;
+	/* 0x02C8 */ struct _EQDAGINFO* Luclin_LEGR_POINT_DAG;
+	/* 0x02CC */ struct _EQDAGINFO* DagPelvisPoint;
+	/* 0x02D0 */ struct _EQDAGINFO* Luclin_CHCHEST1_DAG;
+	/* 0x02D4 */ struct _EQDAGINFO* Luclin_CHCHEST2_DAG;
+	/* 0x02D8 */ int L_EYE_material_palette_index;
+	/* 0x02DC */ int R_EYE_material_palette_index;
+	/* 0x02E0 */ DWORD Unknown02E0;
+	/* 0x02E4 */ DWORD Unknown02E4;
+	/* 0x02E8 */ DWORD Unknown02E8;
+	/* 0x02EC */ DWORD Unknown02EC;
+	/* 0x02F0 */ DWORD Unknown02F0;
+	/* 0x02F4 */ float StartCastPosition[3];
+	/* 0x0300 */ DWORD Unknown0300;
+	/* 0x0304 */ DWORD Unknown0304;
+	/* 0x0308 */ DWORD Unknown0308;
+	/* 0x030C */ DWORD Unknown030C;
+	/* 0x0310 */ DWORD Unknown0310;
+	/* 0x0314 */ DWORD Unknown0314;
+	/* 0x0318 */ DWORD Unknown0318;
+	/* 0x031C */ BYTE Discipline;
+	/* 0x031D */ BYTE Discipline_Unk[3];
 	/* 0x0320 */ BYTE MovementType; // 0 = None, 4 = Walking, 6 = Running, 7 = Swimming
 	/* 0x0321 */ BYTE Unknown0321[12];
 	/* 0x032D */ BYTE IsMovingTimer; // 0 = Moving, 1-6 = Recently Stopped Moving, 200 = Not Moving

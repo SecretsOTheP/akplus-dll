@@ -125,6 +125,9 @@ EQDOORSPAWNINFO** EQ_OBJECT_ppDoorSpawnsBegin = (EQDOORSPAWNINFO**)EQ_POINTER_DO
 EQSPAWNINFO** EQ_OBJECT_ppPlayerSpawnInfo = (EQSPAWNINFO**)EQ_POINTER_PLAYER_SPAWN_INFO;
 #define EQ_OBJECT_PlayerSpawn (*EQ_OBJECT_ppPlayerSpawnInfo)
 
+EQSPAWNINFO** EQ_OBJECT_ppControlledSpawnInfo = (EQSPAWNINFO**)EQ_POINTER_CONTROLLED_SPAWN_INFO;
+#define EQ_OBJECT_ControlledSpawn (*EQ_OBJECT_ppControlledSpawnInfo)
+
 EQSPAWNINFO** EQ_OBJECT_ppTargetSpawnInfo = (EQSPAWNINFO**)EQ_POINTER_TARGET_SPAWN_INFO;
 #define EQ_OBJECT_TargetSpawn (*EQ_OBJECT_ppTargetSpawnInfo)
 
@@ -293,6 +296,11 @@ public:
 	PEQSTRINGSPRITE CDisplay::ChangeDagStringSprite(PEQDAGINFO dag, int fontTexture, char* text);
 	int __cdecl CDisplay::SetNameSpriteState(class EQPlayer* spawn, bool show);
 	int __cdecl CDisplay::SetNameSpriteTint(class EQPlayer* spawn);
+
+	static int* GetInstance()
+	{
+		return *(int**)EQ_POINTER_CDisplay;
+	}
 
 	static inline int SetDagSpriteTint(EQDAGINFO* dag, DWORD tint) {
 		return reinterpret_cast<int(__thiscall*)(int*, void*, DWORD*)>(0x49FF51)(*(int**)EQ_POINTER_CDisplay, dag, &tint);
