@@ -306,6 +306,11 @@ public:
 		return reinterpret_cast<int(__thiscall*)(int*, void*, DWORD*)>(0x49FF51)(*(int**)EQ_POINTER_CDisplay, dag, &tint);
 	}
 
+	static int SetSpecialEnvironment(int value)
+	{
+		return reinterpret_cast<int(__thiscall*)(int*, int)>(0x4AA8CD)(GetInstance(), value);
+	}
+
 	/* 0x0000 */ DWORD Unknown0000[50];
 	/* 0x00C8 */ DWORD Timer;
 	/* ...... */
@@ -413,6 +418,12 @@ public:
 	}
 	static inline bool IsStackBlocked(void* player, _EQSPELLINFO* spell) {
 		return reinterpret_cast<bool(__thiscall*)(void*, _EQSPELLINFO*)>(0x004C830B)(player, spell);
+	}
+	static __int16 TotalSpellAffects(EQCHARINFO* this_ptr, BYTE affect_type, char a3, int* per_buff_values) {
+		return reinterpret_cast<__int16(__thiscall*)(EQCHARINFO*, BYTE, char, int*)>(0x4C6B6D)(this_ptr, affect_type, a3, per_buff_values);
+	}
+	static __int16 StunMe(EQCHARINFO* this_ptr, unsigned int duration) {
+		return reinterpret_cast<__int16(__thiscall*)(EQCHARINFO*, unsigned int)>(0x4C0001)(this_ptr, duration);
 	}
 };
 
@@ -1111,6 +1122,11 @@ EQ_FUNCTION_TYPE_EQGfx_Dx8__t3dDeferQuad EQGfx_Dx8__t3dDeferQuad;
 
 // EQWorldData::GetFullZoneName
 // call 00523E49
+
+__int64 EqGetTime()
+{
+	return reinterpret_cast<__int64(*)(void)>(0x4F35E0)();
+}
 
 void EQ_ToggleBool(bool& b)
 {

@@ -139,6 +139,18 @@ void PatchSwap(int target, BYTE* source, SIZE_T size, BYTE* buffer = nullptr)
 	VirtualProtect((PVOID*)target, size, oldprotect, &oldprotect);
 }
 
+// Patch 'call <Function>' instruction with a new function address
+void PatchCall(uintptr_t call_address, uintptr_t new_func_addr)
+{
+	unsigned long oldProtect;
+	uintptr_t relativeOffset = new_func_addr - (call_address + 5);
+	VirtualProtect((void*)call_address, 5, PAGE_EXECUTE_READWRITE, &oldProtect);
+	*(BYTE*)call_address = 0xE8;  // call opcode
+	*(uintptr_t*)(call_address + 1) = relativeOffset;  // new offset
+	FlushInstructionCache(GetCurrentProcess(), (void*)call_address, 5);
+	VirtualProtect((void*)call_address, 5, oldProtect, &oldProtect);
+}
+
 // start_address (Inclusive), until_address (Exclusive)
 void PatchNopByRange(int start_address, int until_address) {
 
@@ -2093,6 +2105,59 @@ void __fastcall EQPlayer__Dismount_Detour(EQSPAWNINFO* player, int unused)
 // Legacy Model Horse Support [End]
 // --------------------------------------------------------------------------
 
+// --------------------------------------------------------------------------
+// Mesmerization Fix
+// --------------------------------------------------------------------------
+
+// Modified Version of EQCharacter::StunMe(duration) that overrides their current stun even if they are already stunned.
+// This needs to happen for mez effects to be able to extend themselves or apply while the player is already stunned.
+__int16 __fastcall EQCharacter__ForceStunMe(EQCHARINFO* charinfo, int unused, unsigned int duration)
+{
+	EQSPAWNINFO* entity = charinfo->SpawnInfo;
+	if (entity)
+	{
+		EQACTORINFO* actor_info = entity->ActorInfo;
+		if (actor_info)
+		{
+			short divine_aura = EQ_Character::TotalSpellAffects(charinfo, 40, 1, 0);// SE_DivineAura
+			if (divine_aura <= 0)
+			{
+				unsigned int dur = duration;
+				if (duration < 1000)
+				{
+					entity = charinfo->SpawnInfo;
+					if (!entity || entity->Type)
+						return (__int16)entity;
+					dur = 1000;
+				}
+				__int64 end_time = dur + EqGetTime();
+				if (actor_info->StunnedUntilTime < end_time)
+				{
+					actor_info->StunnedUntilTime = end_time;
+					charinfo->StunnedState = 1;
+					CDisplay::SetSpecialEnvironment(23);
+					entity->MovementSpeed = 0.0;
+					if (actor_info->Mount)
+						actor_info->Mount->MovementSpeed = 0.0;
+					char* string_12479 = EQ_CLASS_StringTable->getString(12479, 0);
+					EQ_CLASS_CEverQuest->dsp_chat(string_12479, 273, true);
+				}
+			}
+		}
+	}
+	return (__int16)entity;
+}
+
+void ApplyMesmerizationFixes()
+{
+	// HitBySpell -> SE_Mez -> ForceStunMe()
+	PatchCall(0x4CA352, (uintptr_t)EQCharacter__ForceStunMe); // Replace call to EQCharacter::StunMe()
+}
+
+// --------------------------------------------------------------------------
+// Mesmerization Fix [end]
+// --------------------------------------------------------------------------
+
 #define EQZoneInfo_AddZoneInfo 0x00523AEB
 #define EQZoneInfo_AddZoneInfo 0x00523AEB
 
@@ -4033,6 +4098,9 @@ void InitHooks()
 	SwapModel_Trampoline = (EQ_FUNCTION_TYPE_SwapModel)DetourFunction((PBYTE)0x4A9EB3, (PBYTE)SwapModel_Detour);
 	WearChangeArmor_Trampoline = (EQ_FUNCTION_TYPE_WearChangeArmor)DetourFunction((PBYTE)0x4A2A7A, (PBYTE)WearChangeArmor_Detour);
 	ApplyTintPatches();
+
+	// Mesmerization Stun Duration fix
+	ApplyMesmerizationFixes();
 
 	return_ProcessMouseEvent = (ProcessGameEvents_t)DetourFunction((PBYTE)o_MouseEvents, (PBYTE)ProcessMouseEvent_Hook);
 	//return_SetMouseCenter = (ProcessGameEvents_t)DetourFunction((PBYTE)o_MouseCenter, (PBYTE)SetMouseCenter_Hook);
