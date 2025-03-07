@@ -3847,8 +3847,10 @@ void ApplyTintPatches()
 	// ChangeDag()
 	// - Unlocks proper tinting for IT# model helms/weapons below IT# number 1000:
 	// - IT# models under ID 1000 used shared memory in their tint storage, so setting the tint on one model affected all models in the zone.
-	BYTE patch_dword_1[4] = { 1, 0, 0, 0 };
-	PatchSwap(0x4B094E + 3, patch_dword_1, 4);
+	DWORD value1 = 1;
+	PatchA((void*)(0x4B094E + 3), (const void*)&value1, sizeof(DWORD));
+	PatchA((void*)(0x4B099E + 3), (const void*)&value1, sizeof(DWORD));
+	
 }
 
 // ---------------------------------------------------------------------------------------
