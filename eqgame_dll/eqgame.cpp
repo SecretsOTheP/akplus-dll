@@ -2859,7 +2859,7 @@ bool HandleDllVersionRequest(DWORD id, DWORD value, bool is_request)
 	{
 		if (is_request)
 		{
-			SendCustomSpawnAppearanceMessage(DLL_VERSION_MESSAGE_ID, DLL_VERSION, true);
+			SendCustomSpawnAppearanceMessage(DLL_VERSION_MESSAGE_ID, DLL_VERSION, false);
 		}
 		return true;
 	}
