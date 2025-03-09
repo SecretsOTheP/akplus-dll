@@ -22,7 +22,9 @@
 // Server uses this to tell the user if they are out of date.
 // Increment if we make significant changes that we want to track.
 // Server uses Quarm:WarnDllVersionBelow to warn clients below a specific threshold.
+#ifndef DLL_VERSION
 #define DLL_VERSION 1
+#endif
 #define DLL_VERSION_MESSAGE_ID 4 // Matches ClientFeature::CodeVersion == 4 on the Server, do not change.
 
 #define BYTEn(x, n) (*((BYTE*)&(x)+n))
@@ -2850,6 +2852,20 @@ void SendDllVersion_OnZone()
 	SendCustomSpawnAppearanceMessage(DLL_VERSION_MESSAGE_ID, DLL_VERSION, true);
 }
 
+// Re-sends the DllVersion if the server requested it from us
+bool HandleDllVersionRequest(DWORD id, DWORD value, bool is_request)
+{
+	if (id == DLL_VERSION_MESSAGE_ID)
+	{
+		if (is_request)
+		{
+			SendCustomSpawnAppearanceMessage(DLL_VERSION_MESSAGE_ID, DLL_VERSION, true);
+		}
+		return true;
+	}
+	return false;
+}
+
 // ---------------------------------------------------------------------------------
 // BuffStacking Patches
 // ---------------------------------------------------------------------------------
@@ -4080,6 +4096,7 @@ void InitHooks()
 
 	// Sends DLL_VERSION to the server on zone-in
 	OnZoneCallbacks.push_back(SendDllVersion_OnZone);
+	CustomSpawnAppearanceMessageHandlers.push_back(HandleDllVersionRequest);
 
 	// [BuffStackingPatch:Main]
 	EQCharacter__FindAffectSlot_Trampoline = (EQ_FUNCTION_TYPE_EQCharacter__FindAffectSlot)DetourFunction((PBYTE)0x004C7A3E, (PBYTE)EQCharacter__FindAffectSlot_Detour);
