@@ -36,6 +36,7 @@
 //#define GM_MODE
 //#define LOGGING
 //#define HORSE_LOGGING 1
+//#define TINT_LOGGING 1
 extern void Pulse();
 extern bool was_background;
 extern void LoadIniSettings();
@@ -3545,6 +3546,80 @@ bool UseEruditeFemaleFix = false;
 bool UseWoodElfFemaleFix = false;
 bool UseDarkElfFemaleFix = false;
 
+// Customized implementation of SetDagSpriteTint that uses the upper 8 bits of the color value as a bitmask.
+// This bitmask selectively controls which parts of the item are tinted (bitmask for the item's material palette).
+// Supports up to 8 materials to selectively tint (enough for nearly all weapons/shields)
+// - 0x00 or 0xFF in the mask field count as 'all'.
+// - Define 'TINT_LOGGING' to see debug output.
+int SetDagSpriteTintByMask(EQDAGINFO* dag, DWORD color)
+{
+	if (!dag)
+		return 0;
+
+	int* DagSprite = Graphics::t3dGetDagSprite(dag);
+	if (!DagSprite)
+		return 0;
+
+	if (DagSprite[0] == 20)
+		DagSprite = Graphics::s3dGetSkinAttachedToHierarchicalSprite(0, DagSprite);
+	else if (DagSprite[0] != 72)
+		return 0;
+
+	if (!DagSprite)
+		return 0;
+
+	int* DMSpriteMaterialPalette = Graphics::s3dGetDMSpriteMaterialPalette(DagSprite);
+	if (!DMSpriteMaterialPalette)
+		return 0;
+
+	int numEntries = DMSpriteMaterialPalette[5];
+
+	// The actual color to use when tinting
+	DWORD rgb = (color & 0x00FFFFFF);
+	if (rgb == 0 || rgb == 0x00FFFFFF)
+	{
+		// No tint
+		color = 0x00FFFFFF;
+		rgb = 0x00FFFFFF;
+	}
+
+	// Mask selects which materials on the item will be tinted by bit index (0x00 and 0xFF mean 'all')
+	DWORD mask = (color >> 24) & 0xFF;
+	if (mask == 0xFF || mask == 0)
+		mask = 0xFFFFFFFF;
+
+#ifdef TINT_LOGGING
+	print_chat("mask is %08x numEntries %i", mask, numEntries);
+#endif
+
+	for (int i = 0; i < numEntries; i++)
+	{
+
+#ifdef TINT_LOGGING
+		int* mpEntry = reinterpret_cast<int* (__cdecl*)(int, int*, int)>(*(int*)0x7F9838)(Graphics::GetDisplay()[1], DMSpriteMaterialPalette, i);
+		if (mpEntry)
+		{
+			DWORD* colors = (DWORD*)DMSpriteMaterialPalette[7];
+			DWORD color = colors ? colors[i] : 0;
+			char buf[64];
+			Graphics::t3dGetObjectTag(mpEntry, buf);
+			print_chat("Material[%i] = %s, color %08x", i, buf, color);
+		}
+#endif
+
+		DWORD test = (1 << i);
+		if ((mask & test) == test)
+		{
+#ifdef TINT_LOGGING
+			print_chat("tinting slot %i to %08x", i, rgb);
+#endif
+			Graphics::s3dSetMaterialPaletteEntryTint(DMSpriteMaterialPalette, i, &rgb);
+			DMSpriteMaterialPalette[8] = 1;
+		}
+	}
+	return 1;
+}
+
 // Helper function. Converts Velious Helms to their common values.
 // We only send the canonical values to the server and other players.
 // - [5xx/6xx] -> [240] Swaps our racial Velious head model IT### back to the generic '240' value used by all Velious helms.
@@ -3789,11 +3864,14 @@ int __fastcall SwapModel_Detour(int* cDisplay, int unused, EQSPAWNINFO* entity, 
 		EQDAGINFO* dag = EQPlayer::GetDag(entity, wear_slot);
 		if (dag)
 		{
-			CDisplay::SetDagSpriteTint(dag, tint);
+			if (is_weapon_slot)
+				SetDagSpriteTintByMask(dag, tint);
+			else
+				CDisplay::SetDagSpriteTint(dag, tint);
 		}
 		if (wear_slot == kMaterialSlotSecondary && entity->ActorInfo && entity->ActorInfo->DagShieldPoint) // Also tint shields
 		{
-			CDisplay::SetDagSpriteTint(entity->ActorInfo->DagShieldPoint, tint);
+			SetDagSpriteTintByMask(entity->ActorInfo->DagShieldPoint, tint);
 		}
 	}
 
