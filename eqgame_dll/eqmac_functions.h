@@ -177,6 +177,18 @@ public:
 	static int* t3dGetPointerFromDictionary(const char* key) {
 		return reinterpret_cast<int* (__cdecl*)(int, const char*)>(*(int*)0x7F9A24)(GetDisplay()[1], key);
 	}
+	static int* t3dGetDagSprite(EQDAGINFO* dag) {
+		return reinterpret_cast<int*(__cdecl*)(EQDAGINFO*)>(*(int*)0x7F99FC)(dag);
+	}
+	static int* s3dGetSkinAttachedToHierarchicalSprite(DWORD i, int* sprite) {
+		return reinterpret_cast<int* (__cdecl*)(int, int*)>(*(int*)0x7F9848)(i, sprite);
+	}
+	static int* s3dGetDMSpriteMaterialPalette(int* sprite) {
+		return reinterpret_cast<int* (__cdecl*)(int*)>(*(int*)0x7F9834)(sprite);
+	}
+	static int s3dSetMaterialPaletteEntryTint(int* materialpalette, int i, DWORD* color) {
+		return reinterpret_cast<int(__cdecl*)(int, int*, int, DWORD*)>(*(int*)0x7F9874)(GetDisplay()[1], materialpalette, i, color);
+	}
 };
 
 class Graphics;
