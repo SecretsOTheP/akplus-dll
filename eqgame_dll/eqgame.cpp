@@ -37,7 +37,7 @@
 //#define LOGGING
 //#define HORSE_LOGGING 1
 //#define TINT_LOGGING 1
-#define BANK_LOGGING 1
+//#define BANK_LOGGING 1
 extern void Pulse();
 extern bool was_background;
 extern void LoadIniSettings();
