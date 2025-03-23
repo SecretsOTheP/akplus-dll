@@ -1826,7 +1826,8 @@ typedef struct _EQCHARINFO
 	/* 0x152C */ BYTE Unknown152C[476];
 	/* 0x1708 */ BYTE AirSupply; // air remaining while swimming underwater
 	/* 0x1709 */ BYTE Unknown1709[2475];
-	/* 0x20B4 */ struct _EQITEMINFO* InventoryBankItem[EQ_NUM_INVENTORY_BANK_SLOTS];
+	/* 0x20B4 */ struct _EQITEMINFO* InventoryBankItem[30]; // Standard Bank Bag Slots (2000-2030)
+	/* 0x212C */ struct _EQITEMINFO* SharedBankItem[30]; // Shared Bank Bag Slots (2500-2530)
 	/* ...... */
 } EQCHARINFO, *PEQCHARINFO;
 
