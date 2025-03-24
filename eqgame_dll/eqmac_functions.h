@@ -217,6 +217,7 @@ class CBuffWindow;
 class CShortBuffWindow;
 class CSpellBookWnd;
 class CTrackingWnd;
+class Connection;
 
 class CXStr
 {
@@ -437,6 +438,10 @@ public:
 	static __int16 StunMe(EQCHARINFO* this_ptr, unsigned int duration) {
 		return reinterpret_cast<__int16(__thiscall*)(EQCHARINFO*, unsigned int)>(0x4C0001)(this_ptr, duration);
 	}
+	static int CheckLoreConflict(EQCHARINFO* this_ptr, WORD lore_item_id, EQITEMINFO* lore_item) {
+		return reinterpret_cast<int(__cdecl*)(EQCHARINFO*, WORD, EQITEMINFO*)>(0x4F1469)(this_ptr, lore_item_id, lore_item);
+	}
+
 };
 
 EQ_Character** EQ_CLASS_ppEQ_Character = (EQ_Character**)EQ_POINTER_EQ_Character;
@@ -549,6 +554,10 @@ class CInvSlot
 {
 public:
 	void CInvSlot::HandleRButtonUp(int x, int y);
+	static char SetItem(void* this_ptr, void* item)
+	{
+		return reinterpret_cast<char(__thiscall*)(void* this_ptr, void* item)>(0x421C22)(this_ptr, item);
+	}
 };
 
 class CInvSlotMgr
@@ -687,6 +696,15 @@ public:
 
 CTrackingWnd** EQ_CLASS_ppCTrackingWnd = (CTrackingWnd**)EQ_POINTER_CTrackingWnd;
 #define EQ_CLASS_CTrackingWnd (*EQ_CLASS_ppCTrackingWnd)
+
+class Connection
+{
+public:
+	static void SendMessage_(DWORD opcode, void* buffer, DWORD size, int unknown)
+	{
+		reinterpret_cast<void(__cdecl*)(int*, DWORD, void*, DWORD, int)>(0x054E51A)((int*)0x7952fc, opcode, buffer, size, unknown);
+	}
+};
 
 /* CXStr */
 

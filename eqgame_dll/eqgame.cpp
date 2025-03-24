@@ -37,6 +37,7 @@
 //#define LOGGING
 //#define HORSE_LOGGING 1
 //#define TINT_LOGGING 1
+//#define BANK_LOGGING 1
 extern void Pulse();
 extern bool was_background;
 extern void LoadIniSettings();
@@ -152,6 +153,17 @@ void PatchCall(uintptr_t call_address, uintptr_t new_func_addr)
 	*(uintptr_t*)(call_address + 1) = relativeOffset;  // new offset
 	FlushInstructionCache(GetCurrentProcess(), (void*)call_address, 5);
 	VirtualProtect((void*)call_address, 5, oldProtect, &oldProtect);
+}
+
+template<typename T>
+void PatchT(int target, const T& value)
+{
+	DWORD oldprotect;
+	size_t size = sizeof(value);
+	VirtualProtect(reinterpret_cast<PVOID*>(target), size, PAGE_EXECUTE_READWRITE, &oldprotect);
+	memcpy(reinterpret_cast<T*>(target), &value, size);
+	FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<PVOID*>(target), size);
+	VirtualProtect(reinterpret_cast<PVOID*>(target), size, oldprotect, &oldprotect);
 }
 
 // start_address (Inclusive), until_address (Exclusive)
@@ -421,7 +433,7 @@ void SendCustomSpawnAppearanceMessage(unsigned __int16 feature_id, unsigned __in
 		message.parameter &= 0x7FFFFFFFu;
 	else
 		message.parameter |= 0x80000000u;
-	reinterpret_cast<void(__cdecl*)(int* connection, DWORD opcode, void* buffer, DWORD size, int unknown)>(EQ_FUNCTION_send_message)((int*)0x7952fc, 16629, &message, sizeof(SpawnAppearance_Struct), 0); // Connection::SendMessage(..)
+	Connection::SendMessage_(16629, &message, sizeof(SpawnAppearance_Struct), 0);
 }
 
 // Helper - Executes all callback handlers for custom SpawnAppearanceMessages
@@ -3951,6 +3963,842 @@ void ApplyTintPatches()
 // Tint Support [End]
 // ---------------------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------------------
+// Bank Enhancement Support
+// - Increase Bank Size
+// - Increase limit of CInvSlots so the UI doesn't run out with many bags/slots displayed
+// - Fixed a rendering issue in CInvSlotMgr::UpdateSlots that left stale slots displayed after picking up a bag.
+// ---------------------------------------------------------------------------------------
+
+constexpr WORD CustomSpawnAppearanceMessage_SharedBankSlotsSupported = 5;
+constexpr WORD CustomSpawnAppearanceMessage_SharedBankMode = 6;
+
+int Rule_Shared_Bank_Mode = 0; // 0 = Disabled, 1 = Enabled, may add more later
+int Rule_Shared_Bank_Slots_Available = 0; // Controls which slots we can deposit to. Set by the server.
+
+DWORD MAX_SHARED_BANK_SLOTS = 0; // Set by PatchMaxBankSlots
+DWORD MAX_BANK_SLOTS = 8; // Set by PatchMaxBankSlots
+DWORD CInvSlotMgr_MaxInvSlots = 450; // Set by PatchMaxBankSlots
+DWORD CInvSlotMgr_NumInvSlots_Offset = 0x70C; // Set by PatchMaxBankSlots
+DWORD CInvSlotMgr_LastUpdateTime_Offset = 0x710; // Set by PatchMaxBankSlots
+
+bool SharedBank_HandleMessages(DWORD id, DWORD value, bool is_request)
+{
+	// Server initiates the shared bank negotiation
+	// We just wait for the message and then respond
+
+	if (id == CustomSpawnAppearanceMessage_SharedBankSlotsSupported)
+	{
+		Rule_Shared_Bank_Slots_Available = value > MAX_SHARED_BANK_SLOTS ? MAX_SHARED_BANK_SLOTS : value;
+#ifdef BANK_LOGGING
+		print_chat("[SharedBank] Server sent %u shared bank slots available", value);
+#endif
+		if (is_request)
+		{
+#ifdef BANK_LOGGING
+			print_chat("[SharedBank] Responding with %i shared bank slots", Rule_Shared_Bank_Slots_Available);
+#endif
+			SendCustomSpawnAppearanceMessage(CustomSpawnAppearanceMessage_SharedBankSlotsSupported, Rule_Shared_Bank_Slots_Available, false);
+		}
+		return true;
+	}
+	else if (id == CustomSpawnAppearanceMessage_SharedBankMode)
+	{
+		Rule_Shared_Bank_Mode = value;
+#ifdef BANK_LOGGING
+		print_chat("[SharedBank] Server sent shared bank mode %i", Rule_Shared_Bank_Mode);
+#endif
+		return true;
+	}
+	return false;
+}
+
+bool SB_IsNoDrop(EQITEMINFO* item)
+{
+	if (!item)
+		return false;
+
+	if (item->NoDrop == 0)
+		return true;
+
+	if (item->IsContainer == 1)
+	{
+		for (int i = 0; i < 10; i++)
+		{
+			if (item->Container.Item[i] && item->Container.Item[i]->NoDrop == 0)
+				return true;
+		}
+	}
+
+	return false;
+}
+
+bool SB_IsSharedBankSlot(int slot)
+{
+	return slot >= 2500 && slot < 2830;
+}
+
+bool SB_HasAnyContents(EQITEMINFO* item)
+{
+	if (!item || item->IsContainer != 1)
+		return false;
+
+	for (int i = 0; i < 10; i++)
+	{
+		if (item->Container.Item[i])
+			return true;
+	}
+
+	return false;
+}
+
+bool SB_CheckArrayForLoreItem(WORD LoreItemId, EQITEMINFO** array, int array_len)
+{
+	if (LoreItemId == 0 || !array)
+		return false;
+
+	for (int i = 0; i < array_len; i++)
+	{
+		EQITEMINFO* item = array[i];
+		if (!item)
+			continue;
+		if (item->Id == LoreItemId)
+			return true;
+		if (item->IsContainer == 1 && SB_CheckArrayForLoreItem(LoreItemId, item->Container.Item, 10))
+			return true;
+	}
+
+	return false;
+}
+
+// Check if this item (or its contents) has a lore conflict with the player
+bool SB_CheckLoreConflictWithPlayer(EQITEMINFO* item, bool skip_cursor)
+{
+	if (!item)
+		return false;
+
+	auto* charInfo = EQ_OBJECT_CharInfo;
+	if (!charInfo)
+		return false;
+	
+	if (item->LoreName[0] == '*')
+	{
+		WORD LoreItemId = item->Id;
+
+		if (!skip_cursor && charInfo->CursorItem)
+		{
+			if (charInfo->CursorItem->Id == LoreItemId)
+				return true;
+			if (charInfo->CursorItem->IsContainer == 1)
+			{
+				if (SB_CheckArrayForLoreItem(LoreItemId, charInfo->CursorItem->Container.Item, 10))
+					return true;
+			}
+		}
+		if (SB_CheckArrayForLoreItem(LoreItemId, charInfo->InventoryItem, 21))
+			return true;
+		if (SB_CheckArrayForLoreItem(LoreItemId, charInfo->InventoryPackItem, 8))
+			return true;
+		if (SB_CheckArrayForLoreItem(LoreItemId, charInfo->InventoryBankItem, MAX_BANK_SLOTS))
+			return true;
+		// This item has no conflict with player
+	}
+
+	// If this item has contents, also check those
+	if (item->IsContainer == 1) 
+	{
+		for (int c = 0; c < 10; c++)
+		{
+			if (SB_CheckLoreConflictWithPlayer(item->Container.Item[c], skip_cursor))
+				return true;
+		}
+	}
+
+	return false;
+}
+
+// Checks if the item (and its contents) have a lore conflict with the bank
+// * item - The item to check, plus its contents
+// * skip_slot_id - The slot ID to tolerate a conflict in, because we are swapping with that slot
+bool SB_CheckLoreConflictWithSharedBank(EQITEMINFO* item, int skip_slot_id = -1)
+{
+	if (!item)
+		return false;
+
+	auto* charInfo = EQ_OBJECT_CharInfo;
+	if (!charInfo)
+		return false;
+
+	if (item->LoreName[0] == '*')
+	{
+		WORD LoreItemId = item->Id;
+
+		for (int i = 0; i < MAX_SHARED_BANK_SLOTS; i++)
+		{
+			if (skip_slot_id == (2500 + i))
+				continue;
+
+			EQITEMINFO* shared_bank_bag = charInfo->SharedBankItem[i];
+			if (!shared_bank_bag)
+				continue;
+
+			if (shared_bank_bag->Id == LoreItemId)
+				return true;
+
+			if (shared_bank_bag->IsContainer == 1)
+			{
+				int content_start_slot = 2530 + 10 * i;
+				for (int c = 0; c < 10; c++)
+				{
+					if (skip_slot_id == content_start_slot + c)
+						continue;
+					EQITEMINFO* contents = shared_bank_bag->Container.Item[c];
+					if (contents && contents->Id == LoreItemId)
+						return true;
+				}
+			}
+		}
+	}
+
+	if (item->IsContainer == 1)
+	{
+		for (int c = 0; c < 10; c++)
+		{
+			if (SB_CheckLoreConflictWithSharedBank(item->Container.Item[c], skip_slot_id))
+				return true;
+		}
+	}
+
+	return false;
+}
+
+bool Combine_4F0BD4(EQITEMINFO* item)
+{
+	return reinterpret_cast<bool(__cdecl*)(EQITEMINFO*)>(0x4F0BD4)(item);
+}
+
+bool ItemStackCombine_4F0ACD(EQITEMINFO** pItem1, EQITEMINFO** pItem2, __int16 itemSlot1, __int16 itemSlot2)
+{
+	return reinterpret_cast<bool(__cdecl*)(EQITEMINFO**, EQITEMINFO**, __int16, __int16)>(0x4F0ACD)(pItem1, pItem2, itemSlot1, itemSlot2);
+}
+
+int CanFitInBag_4F11A3(EQITEMINFO* item, EQITEMINFO* container, int printChat)
+{
+	return reinterpret_cast<int(__cdecl*)(EQITEMINFO*, EQITEMINFO*, int)>(0x4F11A3)(item, container, printChat);
+}
+
+// Adds SharedBank support to MoveItem
+typedef int(__stdcall* EQ_FUNCTION_TYPE_MoveItem)(int fromSlot, int toSlot, int print_chat, int b2);
+EQ_FUNCTION_TYPE_MoveItem MoveItem_Trampoline;
+int __stdcall MoveItem_Detour(int fromSlot, int toSlot, int printChat, int b2)
+{
+
+	if (!SB_IsSharedBankSlot(fromSlot) && !SB_IsSharedBankSlot(toSlot))
+	{
+		return MoveItem_Trampoline(fromSlot, toSlot, printChat, b2);
+	}
+
+	// --- MoveItem() is a shared bank interaction ----
+	// In addition to normal MoveItem logic, we also guard against:
+	// - Lore Item conflict on the item/bag contents moved to the shared bank
+	// - Lore Item conflict on the item/bag contents moved to the cursor
+	// - Moving 'No Drop' item/bag contents to the shared bank
+
+	if (Rule_Shared_Bank_Mode != 1)
+	{
+		if (Rule_Shared_Bank_Mode == 2)
+		{
+			print_chat("Shared bank is disabled for self-found characters.");
+		}
+		else
+		{
+			print_chat("Shared bank is disabled. Try again later.");
+		}
+		return 0;
+	}
+
+	auto* charInfo = EQ_OBJECT_CharInfo;
+	if (!charInfo)
+		return 0;
+
+	if (SB_IsNoDrop(charInfo->CursorItem))
+	{
+		print_chat("This item cannot be dropped, traded, or sold.");
+		return 0;
+	}
+
+	EQITEMINFO** pFromSlot = nullptr;
+	EQITEMINFO* FromTheContainer = nullptr;
+	EQITEMINFO** pToSlot = nullptr;
+	EQITEMINFO* ToTheContainer = nullptr;
+	bool can_fit_in_bag = false;
+
+	if (fromSlot == 0) // We have a cursor item. Either placing the cursor item in bank or swapping with the bank.
+	{
+		pFromSlot = &charInfo->CursorItem;
+
+		if (SB_CheckLoreConflictWithSharedBank(charInfo->CursorItem, toSlot))
+		{
+			print_chat("You cannot store a Lore Item that is already in your shared bank.");
+			return 0;
+		}
+
+		if (toSlot >= 2500 && toSlot < 2530) // Primary Shared Bank Slot
+		{
+			int bag_idx = toSlot - 2500;
+			if (bag_idx >= Rule_Shared_Bank_Slots_Available)
+			{
+				print_chat("This shared bank slot is not enabled at this time.");
+				return 0;
+			}
+			pToSlot = &charInfo->SharedBankItem[bag_idx];
+			if (*pToSlot && SB_CheckLoreConflictWithPlayer(*pToSlot, true))
+			{
+				print_chat("You cannot pick up a lore item you already possess.");
+				return 0;
+			}
+		}
+		else if (toSlot >= 2530 && toSlot < 2830) // Contents within a shared bank bag
+		{
+			int contents_idx = toSlot - 2530;
+			int bag_idx = contents_idx / 10;
+			if (bag_idx >= Rule_Shared_Bank_Slots_Available)
+			{
+				print_chat("This shared bank slot is not enabled at this time.");
+				return 0;
+			}
+			ToTheContainer = charInfo->SharedBankItem[bag_idx];
+			if (!ToTheContainer || ToTheContainer->IsContainer != 1)
+			{
+				print_chat("You cannot deposit to this slot. There is no bag in the shared bank.");
+				return 0;
+			}
+			pToSlot = &ToTheContainer->Container.Item[contents_idx % 10];
+			if (*pToSlot && SB_CheckLoreConflictWithPlayer(*pToSlot, true))
+			{
+				print_chat("You cannot pick up a lore item you already possess.");
+				return 0;
+			}
+		}
+		else
+		{
+			print_chat("Invalid to/from combination");
+			return 0;
+		}
+	}
+	else if (toSlot == 0) // Picking up a shared bank item onto empty cursor.
+	{
+		pToSlot = &charInfo->CursorItem;
+
+		if (SB_CheckLoreConflictWithSharedBank(charInfo->CursorItem, fromSlot))
+		{
+			print_chat("You cannot store a lore item that is already in your shared bank.");
+			return 0;
+		}
+
+		if (fromSlot >= 2500 && fromSlot < 2530) // Primary Shared Bank Slot
+		{
+			int bag_idx = fromSlot - 2500;
+			if (bag_idx >= Rule_Shared_Bank_Slots_Available)
+			{
+				if (bag_idx >= MAX_SHARED_BANK_SLOTS)
+				{
+					print_chat("This shared bank slot is disabled.");
+					return 0;
+				}
+				// We'll allow withdrawing from all slots even if it's beyond Rule_Shared_Bank_Slots_Available.
+				// So people can remove items from disabled slots, just not deposit.
+				// Bags must be emptied out before being removed in this scenario.
+				if (SB_HasAnyContents(charInfo->SharedBankItem[bag_idx]))
+				{
+					print_chat("This bag is in a disabled slot. The bag can only be removed after it is emptied.");
+					return 0;
+				}
+			}
+
+			pFromSlot = &charInfo->SharedBankItem[bag_idx];
+			if (*pFromSlot && SB_CheckLoreConflictWithPlayer(*pFromSlot, true))
+			{
+				print_chat("You cannot pick up a lore item you already possess.");
+				return 0;
+			}
+		}
+		else if (fromSlot >= 2530 && fromSlot < 2830) // Contents within a shared bank bag
+		{
+			int contents_idx = fromSlot - 2530;
+			int bag_idx = contents_idx / 10;
+			// We'll allow withdrawing from all slots even if it's beyond Rule_Shared_Bank_Slots_Available.
+			// So people can remove items from disabled slots, just not deposit.
+			if (bag_idx >= MAX_SHARED_BANK_SLOTS)
+			{
+				print_chat("This shared bank slot is disabled.");
+				return 0;
+			}
+			FromTheContainer = charInfo->SharedBankItem[bag_idx];
+			if (!FromTheContainer || FromTheContainer->IsContainer != 1)
+			{
+				print_chat("You cannot deposit to this slot. There is no bag in the shared bank.");
+				return 0;
+			}
+			pFromSlot = &FromTheContainer->Container.Item[contents_idx % 10];
+			if (*pFromSlot && SB_CheckLoreConflictWithPlayer(*pFromSlot, true))
+			{
+				print_chat("You cannot pick up a lore item you already possess.");
+				return 0;
+			}
+		}
+		else
+		{
+#ifdef BANK_LOGGING
+			print_chat("[SharedBank] Invalid to/from combination");
+#endif
+			return 0;
+		}
+	}
+	else
+	{
+#ifdef BANK_LOGGING
+		print_chat("[SharedBank] Invalid to/from combination");
+#endif
+		return 0;
+	}
+
+	// This logic is pretty much 1:1 the latter part of MoveItem
+
+	if (!pFromSlot)
+		return 0;
+
+	if (!pToSlot)
+		return 0;
+
+	EQITEMINFO* src_item = *pFromSlot;
+	if (!*pFromSlot && !*pToSlot)
+		return 0;
+
+	if (FromTheContainer)
+	{
+		if (ToTheContainer)
+			return 0;
+		if (!*pToSlot)
+			goto CAN_FIT_IN_SLOT;
+		can_fit_in_bag = CanFitInBag_4F11A3(*pToSlot, FromTheContainer, printChat);
+	}
+	else
+	{
+		if (!ToTheContainer || !src_item)
+		{
+		CAN_FIT_IN_SLOT:
+			if (b2 && ItemStackCombine_4F0ACD(pFromSlot, pToSlot, fromSlot, toSlot))
+			{
+				return 1;
+			}
+			if (!*pFromSlot
+				|| !*pToSlot
+				|| !Combine_4F0BD4(*pFromSlot)
+				|| (*pFromSlot)->Id != (*pToSlot)->Id)
+			{
+				EQITEMINFO* fromItem = *pFromSlot;
+				*pFromSlot = *pToSlot;
+				*pToSlot = fromItem;
+				int MoveItemStruct[3] = { fromSlot, toSlot, 0 };
+				Connection::SendMessage_(
+					16684,
+					MoveItemStruct,
+					sizeof(MoveItemStruct),
+					1);
+				if (!fromSlot || !toSlot)
+				{
+					BYTE* display = *(BYTE**)EQ_POINTER_CDisplay;
+					if (display)
+					{
+						if (charInfo->CursorItem)
+							display[0x40] = 1;
+						else
+							display[0x40] = 0;
+					}
+				}
+				return 1;
+			}
+			return 0;
+		}
+		can_fit_in_bag = CanFitInBag_4F11A3(src_item, ToTheContainer, printChat);
+	}
+	if (!can_fit_in_bag)
+		return 0;
+	goto CAN_FIT_IN_SLOT;
+}
+
+typedef DWORD(__thiscall* EQ_FUNCTION_TYPE_CInvSlotMgr__UpdateSlots)(int this_ptr);
+EQ_FUNCTION_TYPE_CInvSlotMgr__UpdateSlots CInvSlotMgr__UpdateSlots_Trampoline;
+DWORD __fastcall CInvSlotMgr__UpdateSlots_Detour(int this_ptr, int unused)
+{
+	DWORD LastUpdateTime = *(DWORD*)(this_ptr + CInvSlotMgr_LastUpdateTime_Offset);
+	DWORD result = CInvSlotMgr__UpdateSlots_Trampoline(this_ptr);
+
+	EQWND* bank = *(EQWND**)0x63D654;
+	if (bank && bank->IsVisible)
+	{
+		// Executes additional UpdateSlots logic.
+		// Only runs when the real UpdateSlots refreshes (100ms interval)
+		if (LastUpdateTime != *(DWORD*)(this_ptr + CInvSlotMgr_LastUpdateTime_Offset))
+		{
+			auto* charInfo = EQ_OBJECT_CharInfo;
+			if (!charInfo)
+				return result;
+
+			DWORD NumInvSlots = *(DWORD*)(this_ptr + CInvSlotMgr_NumInvSlots_Offset);
+			int* InvSlotArray = (int*)(this_ptr + 4);
+			for (int i = 0; i < NumInvSlots; i++)
+			{
+				int InvSlot = InvSlotArray[i];
+				if (InvSlot != 0)
+				{
+					int InvSlotWnd = *(int*)(InvSlot + 0x4);
+					if (InvSlotWnd == 0)
+						continue;
+
+					int SlotId = *(int*)(InvSlotWnd + 0x100);
+					if (SlotId >= 2000)
+					{
+						if (SlotId >= 2030 && SlotId < 2330)
+						{
+							// Bank Contents - The original UpdateSlots function forgets to update the item to null if the parent bag was removed.
+							int Item = *(int*)(InvSlot + 0x10);
+							if (Item == 0)
+								continue;
+
+							int contents_idx = (SlotId - 2030);
+							int bag_idx = contents_idx / 10;
+							if (bag_idx < MAX_BANK_SLOTS)
+							{
+								EQITEMINFO* bag = charInfo->InventoryBankItem[bag_idx];
+								if (!bag || bag->IsContainer != 1)
+									CInvSlot::SetItem((void*)InvSlot, nullptr);
+							}
+						}
+						else if (SlotId >= 2500 && SlotId < 2530)
+						{
+							// Shared Bank Slot - Set the item
+							int bag_idx = (SlotId - 2500);
+							if (bag_idx < MAX_SHARED_BANK_SLOTS)
+							{
+								EQITEMINFO* bag = charInfo->SharedBankItem[bag_idx];
+								CInvSlot::SetItem((void*)InvSlot, bag);
+							}
+						}
+						else if (SlotId >= 2530 && SlotId < 2830)
+						{
+							// Shared Bank Contents - Set the item
+							int contents_idx = (SlotId - 2530);
+							int bag_idx = contents_idx / 10;
+							if (bag_idx < MAX_SHARED_BANK_SLOTS)
+							{
+								EQITEMINFO* bag = charInfo->SharedBankItem[bag_idx];
+								if (!bag || bag->IsContainer != 1)
+									CInvSlot::SetItem((void*)InvSlot, 0);
+								else
+									CInvSlot::SetItem((void*)InvSlot, bag->Container.Item[contents_idx % 10]);
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return result;
+}
+
+typedef void* (__cdecl* EQ_FUNCTION_TYPE_OP_MerchantItemPacket)(EQITEMINFO* Src);
+EQ_FUNCTION_TYPE_OP_MerchantItemPacket OP_MerchantItemPacket_Trampoline;
+void* __cdecl OP_MerchantItemPacket_Detour(EQITEMINFO* Src)
+{
+	// These functions don't have a great way to inject shared bank logic, we just have to replace the bank offsets temporarily
+	if (Src && MAX_SHARED_BANK_SLOTS > 0 && SB_IsSharedBankSlot(Src->EquipSlot))
+	{
+#ifdef BANK_LOGGING
+		print_chat("[SharedBank] OP_MerchantItemPacket (slot %u) %s", Src->EquipSlot, Src->Name);
+#endif
+
+		DWORD weather_recvd_799730 = *(DWORD*)(0x799730);
+		*(DWORD*)(0x799730) = 0;
+		PatchT(0x4E306F + 2, (short)2500);
+		PatchT(0x4E3079 + 2, (short)(2500 + MAX_SHARED_BANK_SLOTS));
+		PatchT(0x4E3091 + 2, (short)2530);
+		PatchT(0x4E30B1 + 3, (int)0x212C);
+		PatchT(0x4E3088 + 3, (int)(-0x05E4)); // offset for 'SharedBankItem[0] (0x212C) = 4*2500 - 0x5E4
+		void* result = OP_MerchantItemPacket_Trampoline(Src);
+		PatchT(0x4E306F + 2, (short)2000);
+		PatchT(0x4E3079 + 2, (short)max(2009, 2000 + MAX_BANK_SLOTS));
+		PatchT(0x4E3091 + 2, (short)2030);
+		PatchT(0x4E30B1 + 3, (int)0x20B4);
+		PatchT(0x4E3088 + 3, (int)0x174); // offset for 'InventoryBankItem[0] (0x20B4) = 4*2000 + 0x174
+		*(DWORD*)(0x799730) = weather_recvd_799730;
+		return result;
+	}
+	return OP_MerchantItemPacket_Trampoline(Src);
+}
+
+typedef int(__thiscall* EQ_FUNCTION_TYPE_OP_CharInventory_PlayerBook)(DWORD* this_ptr, EQITEMINFO* Src);
+EQ_FUNCTION_TYPE_OP_CharInventory_PlayerBook OP_CharInventory_PlayerBook_Trampoline;
+int __fastcall OP_CharInventory_PlayerBook_Detour(DWORD* this_ptr, int unused, EQITEMINFO* Src)
+{
+	// These functions don't have a great way to inject shared bank logic, we just have to replace the bank offsets temporarily
+	if (Src && MAX_SHARED_BANK_SLOTS > 0 && SB_IsSharedBankSlot(Src->EquipSlot))
+	{
+#ifdef BANK_LOGGING
+		print_chat("[SharedBank] OP_CharInventory:Book (slot %u) %s", Src->EquipSlot, Src->Name);
+#endif
+
+		DWORD weather_recvd_799730 = *(DWORD*)(0x799730);
+		*(DWORD*)(0x799730) = 0;
+		// Swap bank checks/offsets to shared bank offets
+		PatchT(0x4E0F5A + 2, (short)2500);
+		PatchT(0x4E0F60 + 2, (short)(2500 + MAX_SHARED_BANK_SLOTS));
+		PatchT(0x4E0F6C + 1, (int)-2470);
+		PatchT(0x4E0F7D + 2, (short)(2500 + MAX_SHARED_BANK_SLOTS));
+		PatchT(0x4E0F87 + 1, (int)-2200);
+		int result = OP_CharInventory_PlayerBook_Trampoline(this_ptr, Src);
+		// restore original values
+		PatchT(0x4E0F5A + 2, (short)2000);
+		PatchT(0x4E0F60 + 2, (short)max(2009, 2000 + MAX_BANK_SLOTS));
+		PatchT(0x4E0F6C + 1, (int)-2000);
+		PatchT(0x4E0F7D + 2, (short)max(2009, 2000 + MAX_BANK_SLOTS));
+		PatchT(0x4E0F87 + 1, (int)-2000);
+		*(DWORD*)(0x799730) = weather_recvd_799730;
+		return result;
+	}
+	return OP_CharInventory_PlayerBook_Trampoline(this_ptr, Src);
+}
+
+typedef int(__thiscall* EQ_FUNCTION_TYPE_OP_CharInventory_PlayerItem)(DWORD* this_ptr, EQITEMINFO* Src);
+EQ_FUNCTION_TYPE_OP_CharInventory_PlayerItem OP_CharInventory_PlayerItem_Trampoline;
+int __fastcall OP_CharInventory_PlayerItem_Detour(DWORD* this_ptr, int unused, EQITEMINFO* Src)
+{
+	// These functions don't have a great way to inject shared bank logic, we just have to replace the bank offsets temporarily
+	if (Src && MAX_SHARED_BANK_SLOTS > 0 && SB_IsSharedBankSlot(Src->EquipSlot))
+	{
+#ifdef BANK_LOGGING
+		print_chat("[SharedBank] OP_CharInventory:PlayerItem (slot %u) %s", Src->EquipSlot, Src->Name);
+#endif
+
+		DWORD weather_recvd_799730 = *(DWORD*)(0x799730);
+		*(DWORD*)(0x799730) = 0;
+		// Swap bank checks/offsets to shared bank offets
+		PatchT(0x4E132C + 2, (short)2500);
+		PatchT(0x4E1332 + 2, (short)(2500 + MAX_SHARED_BANK_SLOTS));
+		PatchT(0x4E133E + 1, (int)-2500);
+		PatchT(0x4E1346 + 3,  (int)0x212C); // SharedBank[0]
+		PatchT(0x4E134F + 2, (short)2530);
+		PatchT(0x4E1359 + 1, (int)-2500);
+		PatchT(0x4E137F + 3, (int)0x212C); // SharedBank[0]
+		PatchT(0x4E1359 + 1	, (int)-2500);
+		int result = OP_CharInventory_PlayerItem_Trampoline(this_ptr, Src);
+		// restore original values
+		PatchT(0x4E132C + 2, (short)2000);
+		PatchT(0x4E1332 + 2, (short)max(2009, 2000 + MAX_BANK_SLOTS));
+		PatchT(0x4E133E + 1, (int)-2000);
+		PatchT(0x4E1346 + 3, (int)0x20B4); // SharedBank[0]
+		PatchT(0x4E134F + 2, (short)2030);
+		PatchT(0x4E1359 + 1, (int)-2000);
+		PatchT(0x4E137F + 3, (int)0x20B4); // SharedBank[0]
+		PatchT(0x4E1359 + 1, (int)-2000);
+		*(DWORD*)(0x799730) = weather_recvd_799730;
+		return result;
+	}
+	return OP_CharInventory_PlayerItem_Trampoline(this_ptr, Src);
+}
+
+typedef int(__thiscall* EQ_FUNCTION_TYPE_OP_CharInventory_PlayerContainer)(DWORD* this_ptr, EQITEMINFO* Src);
+EQ_FUNCTION_TYPE_OP_CharInventory_PlayerContainer OP_CharInventory_PlayerContainer_Trampoline;
+int __fastcall OP_CharInventory_PlayerContainer_Detour(DWORD* this_ptr, int unused, EQITEMINFO* Src)
+{
+	// These functions don't have a great way to inject shared bank logic, we just have to replace the bank offsets temporarily
+	if (Src && MAX_SHARED_BANK_SLOTS > 0 && SB_IsSharedBankSlot(Src->EquipSlot))
+	{
+#ifdef BANK_LOGGING
+		print_chat("[SharedBank] OP_CharInventory:Container (slot %u) %s", Src->EquipSlot, Src->Name);
+#endif
+
+		DWORD weather_recvd_799730 = *(DWORD*)(0x799730);
+		*(DWORD*)(0x799730) = 0;
+		PatchT(0x4E0C35 + 2, (short)2500);
+		PatchT(0x4E0C3B + 2, (short)(2500 + MAX_SHARED_BANK_SLOTS));
+		PatchT(0x4E0C47 + 1, (int)-2470);
+		int result = OP_CharInventory_PlayerContainer_Trampoline(this_ptr, Src);
+		PatchT(0x4E0C35 + 2, (short)2000);
+		PatchT(0x4E0C3B + 2, (short)max(2009, 2000 + MAX_BANK_SLOTS));
+		PatchT(0x4E0C47 + 1, (int)-2000);
+		*(DWORD*)(0x799730) = weather_recvd_799730;
+		return result;
+	}
+	return OP_CharInventory_PlayerContainer_Trampoline(this_ptr, Src);
+}
+
+// This is automatically called by PatchMaxBankSlots
+// Increases the number of CInvSlots that the UI can display (default 450)
+void PatchMaxCInvSlots(int max_inv_slots)
+{
+	if (max_inv_slots <= 0x1C2) // 450
+		return;
+
+	// CInvSlotMgr has the following structure, but it will be modified by the below patches.
+	// struct CInvSlotMgr 
+	// {
+	//   0x000 DWORD Unknonwn0000;
+	//   0x004 InvSlot* InvSlots[450]; <-- This size will be increased, shifting the rest of the offsets down
+	//   0x70C DWORD NumInvSlots;
+	//   0x710 DWORD LastUpdateTime;
+	// }
+
+	// Patches all offets/references to 'NumInvSlots' and 'LastUpdateTime' to use their new offets, respectively.
+
+	const DWORD array_bytes_increase = (4 * (max_inv_slots - 0x1C2));
+	const DWORD u32_sizeof = 0x714 + array_bytes_increase;
+	CInvSlotMgr_MaxInvSlots = max_inv_slots;
+	CInvSlotMgr_NumInvSlots_Offset = 0x70C + array_bytes_increase;
+	CInvSlotMgr_LastUpdateTime_Offset = 0x710 + array_bytes_increase;
+
+	// InitGameUI_4A60B5
+	PatchA((void*)(0x4A6190 + 1), &u32_sizeof, 4); // new sizeof(CInvSlotMgr)
+
+	// CInvSlotMgr::Constructor_422A29
+	PatchA((void*)(0x422A38 + 1), &CInvSlotMgr_MaxInvSlots, 4); // memset(this->InvSlots, 0, 450)
+	PatchA((void*)(0x422A3D + 2), &CInvSlotMgr_NumInvSlots_Offset, 4); // this->NumInvSlots
+	PatchA((void*)(0x422A71 + 2), &CInvSlotMgr_NumInvSlots_Offset, 4); // this->NumInvSlots
+	PatchA((void*)(0x422AA2 + 2), &CInvSlotMgr_NumInvSlots_Offset, 4); // this->NumInvSlots
+	PatchA((void*)(0x422AAF + 2), &CInvSlotMgr_NumInvSlots_Offset, 4); // this->NumInvSlots
+
+	// CInvSlotMgr::Destructor_422ADE
+	PatchA((void*)(0x422AE4 + 2), &CInvSlotMgr_NumInvSlots_Offset, 4); // this->NumInvSlots
+	PatchA((void*)(0x422B09 + 2), &CInvSlotMgr_NumInvSlots_Offset, 4); // this->NumInvSlots
+	PatchA((void*)(0x422B12 + 2), &CInvSlotMgr_NumInvSlots_Offset, 4); // this->NumInvSlots
+
+	// CInvSlotMgr::CreateInvSlot_422F42
+	PatchA((void*)(0x422F53 + 2), &CInvSlotMgr_NumInvSlots_Offset, 4); // this->NumInvSlots
+	PatchA((void*)(0x422F70 + 1), &CInvSlotMgr_MaxInvSlots, 4); // 450
+	PatchA((void*)(0x422FBB + 2), &CInvSlotMgr_NumInvSlots_Offset, 4); // this->NumInvSlots
+	PatchA((void*)(0x422FDB + 2), &CInvSlotMgr_NumInvSlots_Offset, 4); // this->NumInvSlots
+	PatchA((void*)(0x422FE5 + 2), &CInvSlotMgr_NumInvSlots_Offset, 4); // this->NumInvSlots
+
+	// CInvSlotMgr::FindInvSlot_423010
+	PatchA((void*)(0x423013 + 2), &CInvSlotMgr_NumInvSlots_Offset, 4); // this->NumInvSlots
+
+	// CInvSlotMgr::UpdateSlots_423089
+	PatchA((void*)(0x4230A0 + 2), &CInvSlotMgr_LastUpdateTime_Offset, 4); // this->LastUpdateTime
+	PatchA((void*)(0x4230A6 + 2), &CInvSlotMgr_LastUpdateTime_Offset, 4); // this->LastUpdateTime
+	PatchA((void*)(0x4230BE + 2), &CInvSlotMgr_NumInvSlots_Offset, 4); // this->NumInvSlots
+	PatchA((void*)(0x4232D9 + 2), &CInvSlotMgr_NumInvSlots_Offset, 4); // this->NumInvSlots
+}
+
+// Patches in extended bank slots and shared bank slots, up to 30 of each.
+// Also increases the UI cache of CInvSlots to avoid display issues.
+void PatchExtraBankSlotSupport()
+{
+	// This redefines the max capacity/array sizes to their maximum allowed values (we can limit elsewhere if max slots are limited)
+	MAX_SHARED_BANK_SLOTS = 30;
+	MAX_BANK_SLOTS = 30;
+
+	// Server will set these values for us after we zone:
+	Rule_Shared_Bank_Mode = 0; // 0 = Disabled, 1 = Enabled, 2 = Self Found (restrictions apply)
+	Rule_Shared_Bank_Slots_Available = 0; // The configurable number of shared bank slots we can deposit in.
+
+	PatchMaxCInvSlots(450 + (MAX_BANK_SLOTS * 11) + MAX_SHARED_BANK_SLOTS);
+
+	// Number of slots at end of profile that need to be zero'd on construction, and deleted on destruction
+	// Also describes how much extra space we needs to be allocated (if any)
+	int TotalBagSlotsAtEndOfPlayerProfile = (MAX_SHARED_BANK_SLOTS > 0)
+		? (30 + MAX_SHARED_BANK_SLOTS)
+		: MAX_BANK_SLOTS;
+
+	if (MAX_BANK_SLOTS > 8)
+	{
+		// Increase loop range to include all bank bags
+		PatchT(0x4F1334 + 3, (BYTE)MAX_BANK_SLOTS); // DelLoreItemDup_4F1266
+
+		// Displays contents of bank bags past 8
+		PatchT(0x423191 + 2, (BYTE)MAX_BANK_SLOTS); // CInvSlotMgr::UpdateSlots_423089
+	}
+
+	if (MAX_BANK_SLOTS > 9) // Existing logic is already '2009' hardcoded
+	{
+		const WORD int16_BankSlotEnd = 2000 + MAX_BANK_SLOTS;
+
+		// Item packets handlers methods - Does validation check on bank bag range
+		PatchT(0x4E0C3B + 2, (short)int16_BankSlotEnd); // 0x41F6 OP_CharInventory -> OP_CharInventory_PlayerContainer_4E0A6D
+		PatchT(0x4E0F60 + 2, (short)int16_BankSlotEnd); // 0x41F6 OP_CharInventory -> OP_CharInventory_PlayerBookCode_4E0D29
+		PatchT(0x4E1332 + 2, (short)int16_BankSlotEnd); // 0x41F6 OP_CharInventory -> OP_CharInventory_PlayerItem_4E10BF
+		PatchT(0x4E3079 + 2, (short)int16_BankSlotEnd); // 0x4031 OP_MerchantItemPacket -> OP_MerchantItemPacket_4E2DF9 <-- used on resync
+
+		// Item packet handlers (inline in HandleWorldMessage)
+		PatchT(0x4EB73C + 2, (short)int16_BankSlotEnd); // 0x4164 OP_ItemPacket
+		PatchT(0x4EBABD + 2, (short)int16_BankSlotEnd); // 0x4165 OP_BookPacket
+		PatchT(0x4EBD83 + 2, (short)int16_BankSlotEnd); // 0x4166 OP_ContainerPacket
+		PatchT(0x4E8F27 + 2, (short)int16_BankSlotEnd); // 0x4034 TradeBookInCode
+		PatchT(0x4E8597 + 2, (short)int16_BankSlotEnd); // 0x???? Also container?
+	}
+	
+	if (MAX_SHARED_BANK_SLOTS > 0)
+	{
+		// CContainerWnd::SetContainer
+		// - Replacing unused logic on the 9000-9030 range to make it work for 2500-2530 range instead
+		PatchT(0x417337 + 2, (int)2500);
+		PatchT(0x41733F + 2, (int)2530);
+		PatchT(0x417347 + 3, (int)-11235);
+		PatchT(0x417353 + 2, (int)-2499);
+		PatchT(0x41736B + 1, (int)2500);
+	}
+
+	if (TotalBagSlotsAtEndOfPlayerProfile > 8)
+	{
+		// OP_PlayerProfile, zero's out extra bank bag slot ptrs on character setup
+		int int32_EQCharInfo_ZeroOutBagsByEndLoopAddress = 0x20B4 + (4 * TotalBagSlotsAtEndOfPlayerProfile);
+		PatchT(0x4E935C + 1, (int)int32_EQCharInfo_ZeroOutBagsByEndLoopAddress); // HandleWorldMessage_4E829F
+
+		// EQCharInfo Destructor - A loop counter deletes all bank containers/contents
+		PatchT(0x4CE982 + 3, (int)TotalBagSlotsAtEndOfPlayerProfile);
+	}
+
+	if (TotalBagSlotsAtEndOfPlayerProfile > 13)
+	{
+		// EQCharacter() constructor sets a byte to '1' in the extended bank memory: CharInfo->InventoryBankItem[13] = 1
+		// The value doesn't appear to be used by anything, so let's get rid of it.
+		// Other than that, all the new bank memory appears untouched.
+		PatchT(0x4CE8C7 + 6, (int)0);
+	}
+
+	// Going beyond 20 slots, we need to allocate 4 more bytes per slot in 'new EQCharInfo'
+	if (TotalBagSlotsAtEndOfPlayerProfile > 20)
+	{
+		int new_charinfo_size = 0x2104 + (4 * (TotalBagSlotsAtEndOfPlayerProfile - 20));
+
+		// 'new' locations
+		PatchT(0x40B036 + 1, (int)new_charinfo_size); // CCharacterCreation::CCharacterCreation_40AB77
+		PatchT(0x539204 + 1, (int)new_charinfo_size); // sub_53901E
+		PatchT(0x53CB35 + 1, (int)new_charinfo_size); // sub_53CAD1
+		PatchT(0x543EF9 + 1, (int)new_charinfo_size); // CEverquest::StartNetworkGame_543CB9
+		PatchT(0x544005 + 1, (int)new_charinfo_size); // CEverquest::StartNetworkGame_543CB9
+		PatchT(0x544099 + 1, (int)new_charinfo_size); // CEverquest::StartNetworkGame_543CB9
+
+		// Initializer EQCharacter::EQCharacter_4CE53E
+		PatchT(0x4B8D3C + 1, (int)new_charinfo_size); // EQCharacter::Init memset(this, 0, ...)
+		PatchT(0x4CE55A + 1, (int)new_charinfo_size); // memset(this, 0, sizeof(this));
+	}
+}
+
+// Fixes CheckLoreConflict not give a false positive when repurchasing a Lore Item that you just sold to a vendor.
+void PatchCheckLoreConflict()
+{
+	// These instructions are invalid. They check redundant stale PlayerProfile information, rather than the actual EQITEMINFO* values.
+	PatchNopByRange(0x4F149A, 0x4F14A0);
+	PatchNopByRange(0x4F14EF, 0x4F14F5);
+	PatchNopByRange(0x4F154C, 0x4F154E);
+	PatchNopByRange(0x4F1585, 0x4F1587);
+}
+
+// ---------------------------------------------------------------------------------------
+// Bank Improvements [end]
+// ---------------------------------------------------------------------------------------
+
 DWORD gmfadress = 0;
 DWORD wpsaddress = 0;
 DWORD swAddress = 0;
@@ -4052,8 +4900,10 @@ void CheckClientMiniMods()
 	}
 }
 
+
 void InitHooks()
 {
+
 	//bypass filename req
 	const char test3[] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,0x90, 0xEB, 0x1B, 0x90, 0x90, 0x90, 0x90 };
 	PatchA((DWORD*)0x005595A7, &test3, sizeof(test3));
@@ -4175,6 +5025,17 @@ void InitHooks()
 	// Sends DLL_VERSION to the server on zone-in
 	OnZoneCallbacks.push_back(SendDllVersion_OnZone);
 	CustomSpawnAppearanceMessageHandlers.push_back(HandleDllVersionRequest);
+
+	// [BigBank/SharedBank]
+	PatchExtraBankSlotSupport();
+	PatchCheckLoreConflict();
+	CustomSpawnAppearanceMessageHandlers.push_back(SharedBank_HandleMessages);
+	CInvSlotMgr__UpdateSlots_Trampoline = (EQ_FUNCTION_TYPE_CInvSlotMgr__UpdateSlots)DetourFunction((PBYTE)0x423089, (PBYTE)CInvSlotMgr__UpdateSlots_Detour); // Displays the new slots
+	MoveItem_Trampoline = (EQ_FUNCTION_TYPE_MoveItem)DetourFunction((PBYTE)0x422B1C, (PBYTE)MoveItem_Detour); // Moves items to/from the new slots
+	OP_MerchantItemPacket_Trampoline = (EQ_FUNCTION_TYPE_OP_MerchantItemPacket)DetourFunction((PBYTE)0x4E2DF9, (PBYTE)OP_MerchantItemPacket_Detour); // Loading items for shared bank slots
+	OP_CharInventory_PlayerBook_Trampoline = (EQ_FUNCTION_TYPE_OP_CharInventory_PlayerBook)DetourFunction((PBYTE)0x4E0D29, (PBYTE)OP_CharInventory_PlayerBook_Detour); // Loading items for shared bank slots
+	OP_CharInventory_PlayerItem_Trampoline = (EQ_FUNCTION_TYPE_OP_CharInventory_PlayerItem)DetourFunction((PBYTE)0x4E10BF, (PBYTE)OP_CharInventory_PlayerItem_Detour); // Loading items for shared bank slots
+	OP_CharInventory_PlayerContainer_Trampoline = (EQ_FUNCTION_TYPE_OP_CharInventory_PlayerContainer)DetourFunction((PBYTE)0x4E0A6D, (PBYTE)OP_CharInventory_PlayerContainer_Detour); // Loading items for shared bank slots
 
 	// [BuffStackingPatch:Main]
 	EQCharacter__FindAffectSlot_Trampoline = (EQ_FUNCTION_TYPE_EQCharacter__FindAffectSlot)DetourFunction((PBYTE)0x004C7A3E, (PBYTE)EQCharacter__FindAffectSlot_Detour);
