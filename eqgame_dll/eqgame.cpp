@@ -35,6 +35,7 @@
 #define FREE_THE_MOUSE
 //#define GM_MODE
 //#define LOGGING
+//#define RACE_LOGGING 1
 //#define HORSE_LOGGING 1
 //#define TINT_LOGGING 1
 //#define BANK_LOGGING 1
@@ -1914,14 +1915,168 @@ int __cdecl do_quit_Detour(int a1, int a2) {
 	}
 	return do_quit_Trampoline(a1, a2);
 }
-typedef int(__thiscall* EQ_FUNCTION_TYPE_EQPlayer__LegalPlayerRace)(void* this_ptr, int a3);
+
+bool isFRM_FRF(char* str)
+{
+	return str && str[0] == 'F' && str[1] == 'R' && (str[2] == 'M' || str[2] == 'F');
+}
+
+bool isRobe(char* str)
+{
+	return str[3] == 'C' && str[4] == 'H' && str[5] == '1' && str[6] >= '0' && str[6] <= '6';
+}
+
+void fix_FRM_FRF_Material(char* str)
+{
+	if ((str[3] == 'C' || str[3] == 'L') && str[8] == '2')
+		str[7] = '0'; // override the Face/Head variant back to zero on Chest 02 and Leg 02
+}
+
+typedef int(__thiscall* EQ_FUNCTION_TYPE_CDisplay__ReplaceMaterial)(CDisplay* this_ptr, char* OldMaterial, char* NewMaterial, EQMODELINFO* Sprite, BYTE* pColor, int partial_match);
+EQ_FUNCTION_TYPE_CDisplay__ReplaceMaterial CDisplay__ReplaceMaterial_Trampoline;
+
+int FRM_FRM_ReplaceMaterial(CDisplay* this_ptr, char* OldMaterial, char* NewMaterial, EQMODELINFO* Sprite, BYTE* pColor, int partial_match)
+{
+	// -- Make Luclin Frogloks Work
+	fix_FRM_FRF_Material(NewMaterial);
+	if (OldMaterial)
+		fix_FRM_FRF_Material(OldMaterial);
+
+	int result = CDisplay__ReplaceMaterial_Trampoline(this_ptr, OldMaterial, NewMaterial, Sprite, pColor, 1);
+
+	if (isRobe(NewMaterial) && NewMaterial[8] == '1')
+	{
+		char face = NewMaterial[7];
+		char NewLegMaterial[16];
+		char OldLegMaterial[16];
+
+		strcpy(NewLegMaterial, "FRMLG__01_MDF");
+		strcpy(OldLegMaterial, "FRMLG__01_MDF");
+		NewLegMaterial[5] = NewMaterial[5];
+		NewLegMaterial[6] = NewMaterial[6];
+
+		// Swap Leg01
+		NewLegMaterial[7] = face;
+		OldLegMaterial[7] = face;
+		int r2 = CDisplay__ReplaceMaterial_Trampoline(this_ptr, OldLegMaterial, NewLegMaterial, Sprite, pColor, 1);
+
+#ifdef RACE_LOGGING
+		print_chat("Extra ReplaceMaterial %s %s %i", OldLegMaterial, NewLegMaterial, r2);
+#endif
+
+		// Swap Leg02
+		++OldLegMaterial[8];
+		++NewLegMaterial[8];
+		OldLegMaterial[7] = '0';
+		NewLegMaterial[7] = '0';
+		r2 = CDisplay__ReplaceMaterial_Trampoline(this_ptr, OldLegMaterial, NewLegMaterial, Sprite, pColor, 1);
+#ifdef RACE_LOGGING
+		print_chat("Extra ReplaceMaterial %s %s %i", OldLegMaterial, NewLegMaterial, r2);
+#endif
+	}
+
+	return result;
+}
+
+int __fastcall CDisplay__ReplaceMaterial_Detour(CDisplay* this_ptr, int unused, char* OldMaterial, char* NewMaterial, EQMODELINFO* Sprite, BYTE* pColor, int partial_match)
+{
+	if (isFRM_FRF(NewMaterial))
+	{
+		return FRM_FRM_ReplaceMaterial(this_ptr, OldMaterial, NewMaterial, Sprite, pColor, partial_match);
+	}
+
+	return CDisplay__ReplaceMaterial_Trampoline(this_ptr, OldMaterial, NewMaterial, Sprite, pColor, partial_match);
+}
+
+typedef char(__thiscall* EQ_FUNCTION_TYPE_CFacePick__CycleThroughFHEB)(void* this_ptr, int IsNext, int zero);
+EQ_FUNCTION_TYPE_CFacePick__CycleThroughFHEB CFacePick__CycleThroughFHEB_Trampoline;
+char __fastcall CFacePick__CycleThroughFHEB_Detour(void* this_ptr, int unused, int IsNext, int zero)
+{
+	EQSPAWNINFO* player = EQ_OBJECT_PlayerSpawn;
+	if (player && player->Race == 330 && player->ActorInfo && player->ActorInfo->ActorInfoPrototype && player->ActorInfo->ActorInfoPrototype->IsLuclinModel)
+	{
+		PatchT(0x41AA43 + 1, (BYTE)9); // MaxFaces
+		char result = CFacePick__CycleThroughFHEB_Trampoline(this_ptr, IsNext, zero);
+		PatchT(0x41AA43 + 1, (BYTE)7); // MaxFaces
+		return result;
+	}
+	else
+	{
+		return CFacePick__CycleThroughFHEB_Trampoline(this_ptr, IsNext, zero);
+	}
+}
+
+void ApplyFroglokSupport()
+{
+	// Increase number of supported wrist textures
+	BYTE u8_2 = 2;
+	PatchA((void*)(0x4A24A0 + 1), &u8_2, 1);
+
+	// Change a jump from 'Race != 130' to 'Race < 130' for a check on whether Face color affects skin color (true for Guktans 330)
+	BYTE u8_JL = 0x7C;
+	PatchA((void*)(0x4A2215), &u8_JL, 1);
+
+	// Change a jump from 'Race != 130' to 'Race < 130' for a check on whether Face color affects skin color (true for Guktans 330)
+	BYTE u16_JL[2] = { 0x0F, 0x8C };
+	PatchA((void*)(0x4A1116), &u16_JL, 2);
+
+	// Allows cycling through 9 faces on froglok
+	CFacePick__CycleThroughFHEB_Trampoline = (EQ_FUNCTION_TYPE_CFacePick__CycleThroughFHEB)DetourFunction((PBYTE)0x41A8D0, (PBYTE)CFacePick__CycleThroughFHEB_Detour);
+}
+
+bool IsLuclinModel(EQSPAWNINFO* spawn)
+{
+	return spawn && spawn->ActorInfo && spawn->ActorInfo->ActorInfoPrototype && spawn->ActorInfo->ActorInfoPrototype->IsLuclinModel;
+}
+
+bool IsFroglokRace(int Race) {
+#ifdef RACE_LOGGING
+	print_chat("[IsFroglokRace] %i", Race);
+#endif
+	return Race == 26 || Race == 27 || Race == 330;
+}
+
+bool IsCustomFroglokSupported()
+{
+	if (!Graphics::IsWorldInitialized())
+	{
+#ifdef RACE_LOGGING
+		print_chat("[IsCustomFroglokSupported] false (World Not Initialized)");
+#endif
+		return false;
+	}
+
+	RaceData* rData = GetCustomRaceData(330, 0);
+	if (!rData)
+	{
+#ifdef RACE_LOGGING
+		print_chat("[IsCustomFroglokSupported] false (RaceData not found)");
+#endif
+		return false;
+	}
+
+	std::string actorDef = rData->actor_tag + "_ACTORDEF";
+	bool result = Graphics::t3dGetPointerFromDictionary(actorDef.c_str());
+#ifdef RACE_LOGGING
+	print_chat("[IsCustomFroglokSupported] %s (%s)", result ? "true" : "false", actorDef.c_str());
+#endif
+	return result;
+}
+
+bool IsPlayerOrPlayerCorpse(EQSPAWNINFO* player)
+{
+	return (player->Type == 0) || (player->Type == 3);
+}
+
+typedef int(__thiscall* EQ_FUNCTION_TYPE_EQPlayer__LegalPlayerRace)(EQSPAWNINFO* this_ptr, int in_race);
 EQ_FUNCTION_TYPE_EQPlayer__LegalPlayerRace LegalPlayerRace_Trampoline;
-int __fastcall LegalPlayerRace_Detour(void* this_ptr, void* not_used, int a3) {
-	//if (a3 == 26)
-	//{
-	//	return 1;
-	//}
-	return LegalPlayerRace_Trampoline(this_ptr, a3);
+int __fastcall LegalPlayerRace_Detour(EQSPAWNINFO* this_ptr, void* not_used, int in_race) {
+	short race = in_race;
+	if (race < 0)
+		race = this_ptr->Race;
+	if (race == 330)
+		return 1;
+	return LegalPlayerRace_Trampoline(this_ptr, in_race);
 }
 
 // --------------------------------------------------------------------------
@@ -2116,6 +2271,16 @@ void __fastcall EQPlayer__Dismount_Detour(EQSPAWNINFO* player, int unused)
 	UnFakeHorseRace(player->ActorInfo->Mount, faked);
 }
 
+typedef int(__stdcall* EQ_FUNCTION_TYPE_EQPlayer__DoAnim)(EQSPAWNINFO* player, int animation, int int2, int int3, float float1, int flag1, char flag2);
+EQ_FUNCTION_TYPE_EQPlayer__DoAnim EQPlayer__DoAnim_Trampoline;
+int __stdcall EQPlayer__DoAnim_Detour(EQSPAWNINFO* player, int animation, int int2, int int3, float float1, int flag1, char flag2)
+{
+	bool faked = player && player->ActorInfo && player->ActorInfo->Rider && player->ActorInfo->Rider->ActorInfo && player->ActorInfo->Rider->ActorInfo->Mount == player && FakeHorseRace(player);
+	int result = EQPlayer__DoAnim_Trampoline(player, animation, int2, int3, float1, flag1, flag2);
+	UnFakeHorseRace(player, faked);
+	return result;
+}
+
 // --------------------------------------------------------------------------
 // Legacy Model Horse Support [End]
 // --------------------------------------------------------------------------
@@ -2192,6 +2357,8 @@ std::vector<CSVRow> parseCSVWithIndex(const std::string& filePath) {
 
 	std::string line;
 	while (std::getline(file, line)) {
+		if (line.empty() || line[0] == '#')
+			continue;
 		CSVRow row;
 		std::stringstream lineStream(line);
 		std::string cell;
@@ -2307,38 +2474,189 @@ std::vector<std::pair<std::string, std::string>> readChrTextFile(const std::stri
 //	}
 //}
 
-struct RaceData {
-	BYTE gender = 0;
-	std::string code;
-};
+std::map<unsigned int, RaceData> race_gender_to_tag_map;
+std::map<std::string, std::string> race_fallback_tags;
 
-std::map<unsigned int, RaceData> raceIdToCodeMap;
+bool UseClassicFrogloks = true;
+bool UseLuclinFrogloks = false;
+
+void PutCustomRaceData(int race, int gender, std::string actor_tag, std::string fallback_anim_actor_tag)
+{
+	unsigned int key = (race << 8) | gender;
+
+	RaceData rData;
+	rData.actor_tag = actor_tag;
+	rData.animation_fallback_tag = fallback_anim_actor_tag;
+
+	race_gender_to_tag_map[key] = rData;
+
+	if (!fallback_anim_actor_tag.empty())
+		race_fallback_tags[actor_tag] = fallback_anim_actor_tag;
+}
+
+RaceData* GetCustomRaceData(int race, int gender)
+{
+	unsigned int key = (race << 8) | gender;
+	auto it = race_gender_to_tag_map.find(key);
+	if (it == race_gender_to_tag_map.end())
+		return nullptr;
+	return &it->second;
+}
 
 typedef int(__thiscall* EQ_FUNCTION_TYPE_EQPlayer_GetActorTag)(EQSPAWNINFO* this_ptr, char* a2);
 EQ_FUNCTION_TYPE_EQPlayer_GetActorTag EQPlayer_GetActorTag_Trampoline;
-int __fastcall EQPlayer_GetActorTag_Detour(EQSPAWNINFO* this_ptr, void* not_used, char* a2) {
+int __fastcall EQPlayer_GetActorTag_Detour(EQSPAWNINFO* this_ptr, void* not_used, char* Destination) {
 
-	WORD ourRace = this_ptr->Race;
-	BYTE ourGender = this_ptr->Gender;
+#ifdef RACE_LOGGING
+	print_chat("[GetActorTag] Called with %u/%u", this_ptr->Race, this_ptr->Gender);
+#endif	
 
-	// Temporarily restore the actual horse race when GetActorTag runs
+	WORD orig_race = this_ptr->Race;
+	BYTE orig_gender = this_ptr->Gender;
+
+	// All horses/mounts use race 216. But we support custom mounts stored in a temporary variable. Restore the true ID temporarily for this ActorTag lookup
 	if (this_ptr->Race == 216)
 		this_ptr->Race = GetActualHorseRaceID(this_ptr);
 
-	int res = EQPlayer_GetActorTag_Trampoline(this_ptr, a2);
+	if (IsPlayerOrPlayerCorpse(this_ptr) && IsFroglokRace(this_ptr->Race))
+		this_ptr->Race = 330;
+
+	int res = EQPlayer_GetActorTag_Trampoline(this_ptr, Destination);
+
+	RaceData* raceData = GetCustomRaceData(this_ptr->Race, this_ptr->Gender);
+	if (raceData)
+	{
+#ifdef RACE_LOGGING
+		print_chat("[GetActorTag] Custom ActorTag is %s", raceData->actor_tag.c_str());
+#endif
+		strcpy(Destination, raceData->actor_tag.c_str());
+	}
+
+#ifdef RACE_LOGGING
+	print_chat("[GetActorTag] Returned %s", Destination);
+#endif
 
 	// Restore the horse to race 216
-	this_ptr->Race = ourRace;	
+	this_ptr->Race = orig_race;
+	this_ptr->Gender = orig_gender;
+	return res;
+}
 
-	std::map<unsigned int, RaceData>::iterator it = raceIdToCodeMap.find(ourRace);
-	if (it != raceIdToCodeMap.end())
+typedef int(__thiscall* EQ_FUNCTION_TYPE_EQPlayer__SetSounds)(EQSPAWNINFO* this_ptr);
+EQ_FUNCTION_TYPE_EQPlayer__SetSounds EQPlayer__SetSounds_Trampoline;
+int __fastcall EQPlayer__SetSounds_Detour(EQSPAWNINFO* this_ptr, int unused)
+{
+	if (this_ptr->Race == 330 || (IsPlayerOrPlayerCorpse(this_ptr) && IsFroglokRace(this_ptr->Race)))
 	{
-		if (it->second.gender == ourGender)
+		WORD orig_race = this_ptr->Race;
+		BYTE orig_gender = this_ptr->Gender;
+		this_ptr->Race = 26;
+		this_ptr->Gender = 2;
+		int result = EQPlayer__SetSounds_Trampoline(this_ptr);
+		this_ptr->Race = orig_race;
+		this_ptr->Gender = orig_gender;
+		return result;
+	}
+	else
+	{
+		return EQPlayer__SetSounds_Trampoline(this_ptr);
+	}
+}
+
+typedef void(__thiscall* EQ_FUNCTION_TYPE_EQPlayer__ChangeForm)(EQSPAWNINFO* this_ptr, Illusion_Struct* illusion);
+EQ_FUNCTION_TYPE_EQPlayer__ChangeForm EQPlayer__ChangeForm_Trampoline;
+void __fastcall EQPlayer__ChangeForm_Detour(EQSPAWNINFO* this_ptr, void* unused, Illusion_Struct* illusion)
+{
+#ifdef RACE_LOGGING
+	print_chat("[ChangeForm] Called with %u/%u", illusion->race, illusion->gender);
+#endif
+	if (IsPlayerOrPlayerCorpse(this_ptr))
+	{
+		if (IsFroglokRace(illusion->race))
 		{
-			strcpy(a2, it->second.code.c_str());
+			if (IsCustomFroglokSupported())
+			{
+#ifdef RACE_LOGGING
+				print_chat("[ChangeForm] Overriding froglok illusion race:%u gender:%u texture:%u face:%u", illusion->race, illusion->gender, illusion->texture, illusion->face);
+#endif
+				illusion->race = 330; // PC's will always use RaceID 330 when becoming a Froglok.
+				illusion->texture = 0xFF; // Enable texture swapping.
+				if (UseClassicFrogloks)
+				{
+					illusion->face = 0;
+				}
+				if (illusion->gender == 2)
+				{
+					if (this_ptr->CharInfo)
+					{
+#ifdef RACE_LOGGING
+						print_chat("[ChangeForm] Using gender %u from CharInfo", this_ptr->CharInfo->Gender);
+#endif
+						illusion->gender = this_ptr->CharInfo->Gender;
+					}
+					else
+					{
+#ifdef RACE_LOGGING
+						print_chat("[ChangeForm] Using gender %u from SpawnInfo", this_ptr->Gender);
+#endif
+						illusion->gender = this_ptr->Gender;
+					}
+				}
+			}
+			else
+			{
+#ifdef RACE_LOGGING
+				print_chat("[ChangeForm] Froglok not loaded, using illusion as-is");
+#endif
+			}
+
 		}
 	}
-	return res;
+#ifdef RACE_LOGGING
+	print_chat("[ChangeForm] Apply with %u/%u", illusion->race, illusion->gender);
+#endif
+	EQPlayer__ChangeForm_Trampoline(this_ptr, illusion);
+}
+
+typedef char(__stdcall* EQ_FUNCTION_TYPE_CDisplay__GetAlternateAnimTag)(char* Source, char* Destination, char a3);
+EQ_FUNCTION_TYPE_CDisplay__GetAlternateAnimTag CDisplay__GetAlternateAnimTag_Trampoline;
+char __stdcall CDisplay__GetAlternateAnimTag_Detour(char* Source, char* Destination, char a3)
+{
+	if (Source && Destination)
+	{
+		auto it = race_fallback_tags.find(Source);
+		if (it != race_fallback_tags.end())
+		{
+			strcpy(Destination, it->second.c_str());
+			return 1;
+		}
+	}
+	return CDisplay__GetAlternateAnimTag_Trampoline(Source, Destination, a3);
+}
+
+typedef int(__thiscall* EQ_FUNCTION_TYPE_EQ_Character__InitInnates)(EQCHARINFO* this_ptr, unsigned __int16 Race, unsigned __int16 Class);
+EQ_FUNCTION_TYPE_EQ_Character__InitInnates EQ_Character__InitInnates_Trampoline;
+int __fastcall EQ_Character__InitInnates_Detour(EQCHARINFO* this_ptr, unsigned int unused, __int16 Race, unsigned __int16 Class)
+{
+	if (this_ptr && this_ptr == EQ_OBJECT_CharInfo)
+	{
+		if (Race == 60)
+		{
+			// Makes 'Standard Skeleton' & 'Iksar Skeleton' both have the same infravision.
+			// Since we cosmetically swap skeleton models for Necro/AoN buffs on Quarm, let's avoid
+			// having a gameplay advantage on one race over the other.
+			Race = 161;
+		}
+		else if (IsFroglokRace(Race))
+		{
+			// Game is inconsistent with the innates of frogloks between (26, 27, 330), so map them all to the same one
+			// 26 - infravision
+			// 27 - missing
+			// 330 - infravision, regen
+			Race = 26;
+		}
+	}
+	return EQ_Character__InitInnates_Trampoline(this_ptr, Race, Class);
 }
 
 int __cdecl CityCanStart_Detour(int a1, int a2, int a3, int a4) {
@@ -2675,14 +2993,14 @@ signed int __cdecl ProcessMouseEvent_Hook()
 
 void InitRaceShortCodeMap()
 {
-	raceIdToCodeMap.clear();
+	race_gender_to_tag_map.clear();
 	auto parsedMap = parseCSVWithIndex("RaceData.txt");
 	if (parsedMap.size())
 	{
 		for (auto& entry : parsedMap)
 		{
 			std::vector<std::string>& column = entry.columns;
-			if (column.size() == 3)
+			if (column.size() >= 3)
 			{
 				if (column[0].empty())
 					continue;
@@ -2693,13 +3011,14 @@ void InitRaceShortCodeMap()
 
 				unsigned int raceIdNum = std::atoi(column[0].c_str());
 				unsigned int genderIdNum = std::atoi(column[1].c_str());
-				std::string raceCodeId = column[2];
 
-				RaceData rData;
-				rData.gender = genderIdNum;
-				rData.code = raceCodeId;
+				std::string actor_tag = column[2];
+				std::string fallback_anim_actor_tag = "";
 
-				raceIdToCodeMap.emplace(raceIdNum, rData);
+				if (column.size() >= 4 && !column[3].empty())
+					fallback_anim_actor_tag = column[3];
+
+				PutCustomRaceData(raceIdNum, genderIdNum, actor_tag, fallback_anim_actor_tag);
 			}
 		}
 	}
@@ -3523,6 +3842,7 @@ void ApplySongWindowBytePatches() {
 // ---------------------------------------------------------------------------------------
 
 constexpr BYTE kMaterialSlotHead = 0;
+constexpr BYTE kMaterialSlotChest = 1;
 constexpr BYTE kMaterialSlotPrimary = 7;
 constexpr BYTE kMaterialSlotSecondary = 8; // Shared with 'ranged'
 
@@ -3637,19 +3957,25 @@ int SetDagSpriteTintByMask(EQDAGINFO* dag, DWORD color)
 // - [5xx/6xx] -> [240] Swaps our racial Velious head model IT### back to the generic '240' value used by all Velious helms.
 WORD ToCanonicalHelmMaterial(WORD material, WORD race)
 {
-	if ((race >= 1 && race <= 12) || race == 128 || race == 130)
+	if ((race >= 1 && race <= 12) || race == 128 || race == 130 || race == 330)
 	{
 		switch (material)
 		{
 			// Vah Shir have their own material IDs when they equip leather/chain/plate helms, but no custom helm.
 		case 661: // VAH (F) Leather Helm
 		case 666: // VAH (M) Leather Helm
+		case 841: // FRM Leather Helm
+		case 871: // FRF Leather Helm
 			return kMaterialLeather; // (1)
 		case 662: // VAH (F) Chain Helm
 		case 667: // VAH (M) Chain Helm
+		case 842:
+		case 872:
 			return kMaterialChain; // (2)
 		case 663: // VAH (F) Plate Helm
 		case 668: // VAH (M) Plate Helm
+		case 843:
+		case 873:
 			return kMaterialPlate; // (3)
 
 			// Converts all the race-specific Velious Helm IT### numbers to the common 240 value
@@ -3832,6 +4158,19 @@ void __fastcall WearChangeArmor_Detour(int* cDisplay, int unused_edx, EQSPAWNINF
 	block_outbound_wearchange += block_wearchange;
 	WearChangeArmor_Trampoline(cDisplay, entity, wear_slot, new_material, old_material, colors, from_server);
 	block_outbound_wearchange -= block_wearchange;
+
+	if (wear_slot == kMaterialSlotChest
+		&& entity->Texture == 0xFF
+		&& (entity->Race == 330 || (IsFroglokRace(entity->Race) && IsPlayerOrPlayerCorpse(entity)))
+		&& IsLuclinModel(entity))
+	{
+		// Fixing Luclin Frogloks when unequipping a robe (ensuring legs update)
+		if ((new_material < 10 || new_material > 16) && (old_material >= 10 && old_material <= 16))
+		{
+			WearChangeArmor_Trampoline(cDisplay, entity, 2, entity->EquipmentMaterialType[2], entity->EquipmentMaterialType[2], entity->EquipmentMaterialColor[2], true);
+			WearChangeArmor_Trampoline(cDisplay, entity, 5, entity->EquipmentMaterialType[5], entity->EquipmentMaterialType[5], entity->EquipmentMaterialColor[5], true);
+		}
+	}
 }
 
 typedef int(__thiscall* EQ_FUNCTION_TYPE_SwapModel)(int* cdisplay, EQSPAWNINFO* entity, int wear_slot, char* ITstr, int from_server);
@@ -4898,6 +5237,30 @@ void CheckClientMiniMods()
 	{
 		g_bSongWindowAutoHide = false;
 	}
+
+	error = GetPrivateProfileStringA("Defaults", "UseLuclinFroglok", szDefault, szResult, 255, "./eqclient.ini");
+	if (strcmp(szResult, "FALSE") == 0) // False
+	{
+		UseClassicFrogloks = true;
+		UseLuclinFrogloks = false;
+		PutCustomRaceData(330, 0, "FKM", "");
+		PutCustomRaceData(330, 1, "FKF", "FKM");
+		PutCustomRaceData(330, 2, "FKM", "");
+	}
+	else if (strcmp(szResult, "NONE") == 0) // Not found
+	{
+		UseClassicFrogloks = true;
+		UseLuclinFrogloks = false;
+		PutCustomRaceData(330, 0, "FKM", "");
+		PutCustomRaceData(330, 1, "FKF", "FKM");
+		PutCustomRaceData(330, 2, "FKM", "");
+		WritePrivateProfileStringA_tramp("Defaults", "UseLuclinFroglok", "FALSE", "./eqclient.ini");
+	}
+	else
+	{
+		UseClassicFrogloks = false;
+		UseLuclinFrogloks = true;
+	}
 }
 
 
@@ -5011,6 +5374,10 @@ void InitHooks()
 	LegalPlayerRace_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__LegalPlayerRace)DetourFunction((PBYTE)0x0050BD9D, (PBYTE)LegalPlayerRace_Detour);
 	EQZoneInfo_Ctor_Trampoline = (EQ_FUNCTION_TYPE_EQZoneInfo__EQZoneInfo)DetourFunction((PBYTE)0x005223C6, (PBYTE)EQZoneInfo_Ctor_Detour);
 	EQPlayer_GetActorTag_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer_GetActorTag)DetourFunction((PBYTE)0x0050845D, (PBYTE)EQPlayer_GetActorTag_Detour);
+	EQPlayer__ChangeForm_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__ChangeForm)DetourFunction((PBYTE)0x5074FA, (PBYTE)EQPlayer__ChangeForm_Detour);
+	CDisplay__GetAlternateAnimTag_Trampoline = (EQ_FUNCTION_TYPE_CDisplay__GetAlternateAnimTag)DetourFunction((PBYTE)0x4D8065, (PBYTE)CDisplay__GetAlternateAnimTag_Detour);
+	EQ_Character__InitInnates_Trampoline = (EQ_FUNCTION_TYPE_EQ_Character__InitInnates)DetourFunction((PBYTE)0x4BD4F5, (PBYTE)EQ_Character__InitInnates_Detour);
+	EQPlayer__SetSounds_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__SetSounds)DetourFunction((PBYTE)0x50C2C9, (PBYTE)EQPlayer__SetSounds_Detour);
 
 	// Horse Support
 	HasInvalidRiderTexture_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__HasInvalidRiderTexture)DetourFunction((PBYTE)0x0051FCA6, (PBYTE)HasInvalidRiderTexture_Detour);
@@ -5021,6 +5388,9 @@ void InitHooks()
 	EQPlayer__Dismount_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__Dismount)DetourFunction((PBYTE)0x51FF5F, (PBYTE)EQPlayer__Dismount_Detour);
 	DetourFunction((PBYTE)0x51FCE6, (PBYTE)IsHorse);
 	
+	// Frogs
+	ApplyFroglokSupport();
+	CDisplay__ReplaceMaterial_Trampoline = (EQ_FUNCTION_TYPE_CDisplay__ReplaceMaterial)DetourFunction((PBYTE)0x4A0A95, (PBYTE)CDisplay__ReplaceMaterial_Detour);
 
 	// Sends DLL_VERSION to the server on zone-in
 	OnZoneCallbacks.push_back(SendDllVersion_OnZone);
@@ -5172,8 +5542,8 @@ void InitHooks()
 	// turn on chat keepalive
 	sprintf(szDefault, "%d", 1);
 	WritePrivateProfileStringA_tramp("Defaults", "ChatKeepAlive", szDefault, "./eqclient.ini");
-	CheckClientMiniMods();
 	InitRaceShortCodeMap();
+	CheckClientMiniMods();
 	bInitalized=true;
 }
 

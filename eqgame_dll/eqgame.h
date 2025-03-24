@@ -1,5 +1,7 @@
 //#include "..\zlib_x86\include\zlib.h"
 
+#include <string>
+
 #ifndef PACKET_FUNCTIONS_H
 #define PACKET_FUNCTIONS_H
 
@@ -29,6 +31,33 @@ struct WearChange_Struct
 	/*006*/ unsigned short align06;
 	/*008*/ unsigned int   color;
 };
+
+struct Illusion_Struct
+{
+	unsigned short spawnid;
+	unsigned short race;
+	unsigned char gender;
+	unsigned char texture;
+	unsigned char helmtexture;
+	unsigned char unknown007; // maybe 16-bit helmtexture
+	unsigned short face;
+	unsigned char hairstyle;
+	unsigned char haircolor;
+	unsigned char beard;
+	unsigned char beardcolor;
+	unsigned short unknown_void;
+	int size;
+};
+
+struct RaceData
+{
+	std::string actor_tag = "";
+	std::string animation_fallback_tag = "";
+};
+
+// Custom Race Support
+RaceData* GetCustomRaceData(int race, int gender);
+void PutCustomRaceData(int race, int gender, std::string actor_tag, std::string fallback_anim_actor_tag = "");
 
 // Custom Messaging Support
 constexpr unsigned int SpawnAppearanceType_ClientDllMessage = 256;

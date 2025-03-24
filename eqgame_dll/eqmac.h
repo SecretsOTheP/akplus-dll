@@ -2054,7 +2054,11 @@ typedef struct _EQACTORINFO
 	/* 0x0320 */ BYTE MovementType; // 0 = None, 4 = Walking, 6 = Running, 7 = Swimming
 	/* 0x0321 */ BYTE Unknown0321[12];
 	/* 0x032D */ BYTE IsMovingTimer; // 0 = Moving, 1-6 = Recently Stopped Moving, 200 = Not Moving
-	/* 0x032E */ BYTE Unknown032E[266];
+	/* 0x032E */ BYTE Unknown032E[130];
+	/* 0x03B0 */ BYTE IsLuclinModel;
+	/* 0x03B1 */ BYTE Unknown03B1[115];
+	/* 0x0424 */ DWORD CastingSpellCastTime;
+	/* 0x0428 */ BYTE Unknown0428[16];
 	/* 0x0438 */ DWORD IsLookingForGroup;
 	/* 0x043C */ DWORD IsTrader;
 	/* ...... */
