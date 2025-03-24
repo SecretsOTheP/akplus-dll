@@ -1921,14 +1921,29 @@ bool isFRM_FRF(char* str)
 	return str && str[0] == 'F' && str[1] == 'R' && (str[2] == 'M' || str[2] == 'F');
 }
 
+bool isChest(char* str)
+{
+	return strncmp(&str[3], "CH", 2) == 0;
+}
+
+bool isLeg(char* str)
+{
+	return strncmp(&str[3], "LG", 2) == 0;
+}
+
+bool isWrist(char* str)
+{
+	return strncmp(&str[3], "FA", 2) == 0;
+}
+
 bool isRobe(char* str)
 {
-	return strncmp(&str[3], "CH1", 3) == 0 && str[6] >= '0' && str[6] <= '6';
+	return str[5] == '1' && str[6] >= '0' && str[6] <= '6';
 }
 
 void fix_FRM_FRF_Material(char* str)
 {
-	if (str[8] == '2' && (strncmp(&str[3], "CH", 2) == 0 || strncmp(&str[3], "LG", 2) == 0)) // Chest or Legs
+	if (str[8] == '2' && (isChest(str) || isLeg(str))) // Chest or Legs
 		str[7] = '0'; // override the Face/Head variant back to zero on Chest 02 and Leg 02
 }
 
@@ -1943,9 +1958,12 @@ int FRM_FRF_ReplaceMaterial(CDisplay* this_ptr, char* OldMaterial, char* NewMate
 	if (OldMaterial)
 		fix_FRM_FRF_Material(OldMaterial);
 
+	if (isWrist(NewMaterial) && isRobe(NewMaterial))
+		return 1; // Robes just hide the wrist but don't display a sleeve, so for now just keep whatever is already on their wrist
+
 	int result = CDisplay__ReplaceMaterial_Trampoline(this_ptr, OldMaterial, NewMaterial, Sprite, pColor, 1);
 
-	if (isRobe(NewMaterial) && NewMaterial[8] == '1')
+	if (isChest(NewMaterial) && isRobe(NewMaterial) && NewMaterial[8] == '1')
 	{
 		char face = NewMaterial[7];
 		char NewLegMaterial[16];
