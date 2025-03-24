@@ -5244,7 +5244,8 @@ void CheckClientMiniMods()
 		UseClassicFrogloks = true;
 		UseLuclinFrogloks = false;
 		PutCustomRaceData(330, 0, "FKM", "");
-		PutCustomRaceData(330, 1, "FKF", "FKM");
+		// PutCustomRaceData(330, 1, "FKF", "FKM"); // TODO: We don't have FKF created yet. Use FKM for now.
+		PutCustomRaceData(330, 1, "FKM", "");
 		PutCustomRaceData(330, 2, "FKM", "");
 	}
 	else if (strcmp(szResult, "NONE") == 0) // Not found
@@ -5252,7 +5253,8 @@ void CheckClientMiniMods()
 		UseClassicFrogloks = true;
 		UseLuclinFrogloks = false;
 		PutCustomRaceData(330, 0, "FKM", "");
-		PutCustomRaceData(330, 1, "FKF", "FKM");
+		// PutCustomRaceData(330, 1, "FKF", "FKM"); TODO: We don't have FKF created yet. Use FKM for now.
+		PutCustomRaceData(330, 1, "FKM", "");
 		PutCustomRaceData(330, 2, "FKM", "");
 		WritePrivateProfileStringA_tramp("Defaults", "UseLuclinFroglok", "FALSE", "./eqclient.ini");
 	}
