@@ -1923,20 +1923,21 @@ bool isFRM_FRF(char* str)
 
 bool isRobe(char* str)
 {
-	return str[3] == 'C' && str[4] == 'H' && str[5] == '1' && str[6] >= '0' && str[6] <= '6';
+	return strncmp(&str[3], "CH1", 3) == 0 && str[6] >= '0' && str[6] <= '6';
 }
 
 void fix_FRM_FRF_Material(char* str)
 {
-	if ((str[3] == 'C' || str[3] == 'L') && str[8] == '2')
+	if (str[8] == '2' && (strncmp(&str[3], "CH", 2) == 0 || strncmp(&str[3], "LG", 2) == 0)) // Chest or Legs
 		str[7] = '0'; // override the Face/Head variant back to zero on Chest 02 and Leg 02
 }
 
 typedef int(__thiscall* EQ_FUNCTION_TYPE_CDisplay__ReplaceMaterial)(CDisplay* this_ptr, char* OldMaterial, char* NewMaterial, EQMODELINFO* Sprite, BYTE* pColor, int partial_match);
 EQ_FUNCTION_TYPE_CDisplay__ReplaceMaterial CDisplay__ReplaceMaterial_Trampoline;
 
-int FRM_FRM_ReplaceMaterial(CDisplay* this_ptr, char* OldMaterial, char* NewMaterial, EQMODELINFO* Sprite, BYTE* pColor, int partial_match)
+int FRM_FRF_ReplaceMaterial(CDisplay* this_ptr, char* OldMaterial, char* NewMaterial, EQMODELINFO* Sprite, BYTE* pColor, int partial_match)
 {
+
 	// -- Make Luclin Frogloks Work
 	fix_FRM_FRF_Material(NewMaterial);
 	if (OldMaterial)
@@ -1950,15 +1951,17 @@ int FRM_FRM_ReplaceMaterial(CDisplay* this_ptr, char* OldMaterial, char* NewMate
 		char NewLegMaterial[16];
 		char OldLegMaterial[16];
 
-		strcpy(NewLegMaterial, "FRMLG__01_MDF");
-		strcpy(OldLegMaterial, "FRMLG__01_MDF");
+		strncpy(NewLegMaterial, NewMaterial, 3); // Copy actortag
+		strncpy(OldLegMaterial, NewMaterial, 3); // Copy actortag
+		strcpy(&NewLegMaterial[3], "LG__01_MDF");
+		strcpy(&OldLegMaterial[3], "LG__01_MDF");
 		NewLegMaterial[5] = NewMaterial[5];
 		NewLegMaterial[6] = NewMaterial[6];
 
 		// Swap Leg01
 		NewLegMaterial[7] = face;
 		OldLegMaterial[7] = face;
-		int r2 = CDisplay__ReplaceMaterial_Trampoline(this_ptr, OldLegMaterial, NewLegMaterial, Sprite, pColor, 1);
+		//int r2 = CDisplay__ReplaceMaterial_Trampoline(this_ptr, OldLegMaterial, NewLegMaterial, Sprite, pColor, 1);
 
 #ifdef RACE_LOGGING
 		print_chat("Extra ReplaceMaterial %s %s %i", OldLegMaterial, NewLegMaterial, r2);
@@ -1969,7 +1972,7 @@ int FRM_FRM_ReplaceMaterial(CDisplay* this_ptr, char* OldMaterial, char* NewMate
 		++NewLegMaterial[8];
 		OldLegMaterial[7] = '0';
 		NewLegMaterial[7] = '0';
-		r2 = CDisplay__ReplaceMaterial_Trampoline(this_ptr, OldLegMaterial, NewLegMaterial, Sprite, pColor, 1);
+		int r3 = CDisplay__ReplaceMaterial_Trampoline(this_ptr, OldLegMaterial, NewLegMaterial, Sprite, pColor, 1);
 #ifdef RACE_LOGGING
 		print_chat("Extra ReplaceMaterial %s %s %i", OldLegMaterial, NewLegMaterial, r2);
 #endif
@@ -1982,7 +1985,7 @@ int __fastcall CDisplay__ReplaceMaterial_Detour(CDisplay* this_ptr, int unused, 
 {
 	if (isFRM_FRF(NewMaterial))
 	{
-		return FRM_FRM_ReplaceMaterial(this_ptr, OldMaterial, NewMaterial, Sprite, pColor, partial_match);
+		return FRM_FRF_ReplaceMaterial(this_ptr, OldMaterial, NewMaterial, Sprite, pColor, partial_match);
 	}
 
 	return CDisplay__ReplaceMaterial_Trampoline(this_ptr, OldMaterial, NewMaterial, Sprite, pColor, partial_match);
