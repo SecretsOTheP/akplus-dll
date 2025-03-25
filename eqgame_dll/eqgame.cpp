@@ -434,7 +434,7 @@ void SendCustomSpawnAppearanceMessage(unsigned __int16 feature_id, unsigned __in
 		message.parameter &= 0x7FFFFFFFu;
 	else
 		message.parameter |= 0x80000000u;
-	Connection::SendMessage_(16629, &message, sizeof(SpawnAppearance_Struct), 0);
+	Connection::SendMessage_(16629, &message, sizeof(SpawnAppearance_Struct), 1);
 }
 
 // Helper - Executes all callback handlers for custom SpawnAppearanceMessages
@@ -4881,6 +4881,8 @@ void* __cdecl OP_MerchantItemPacket_Detour(EQITEMINFO* Src)
 
 		DWORD weather_recvd_799730 = *(DWORD*)(0x799730);
 		*(DWORD*)(0x799730) = 0;
+		DWORD saved_798690 = *(DWORD*)(0x798690);
+		*(DWORD*)(0x798690) = 0;
 		PatchT(0x4E306F + 2, (short)2500);
 		PatchT(0x4E3079 + 2, (short)(2500 + MAX_SHARED_BANK_SLOTS));
 		PatchT(0x4E3091 + 2, (short)2530);
@@ -4893,6 +4895,7 @@ void* __cdecl OP_MerchantItemPacket_Detour(EQITEMINFO* Src)
 		PatchT(0x4E30B1 + 3, (int)0x20B4);
 		PatchT(0x4E3088 + 3, (int)0x174); // offset for 'InventoryBankItem[0] (0x20B4) = 4*2000 + 0x174
 		*(DWORD*)(0x799730) = weather_recvd_799730;
+		*(DWORD*)(0x798690) = saved_798690;
 		return result;
 	}
 	return OP_MerchantItemPacket_Trampoline(Src);
@@ -4911,6 +4914,8 @@ int __fastcall OP_CharInventory_PlayerBook_Detour(DWORD* this_ptr, int unused, E
 
 		DWORD weather_recvd_799730 = *(DWORD*)(0x799730);
 		*(DWORD*)(0x799730) = 0;
+		DWORD saved_798690 = *(DWORD*)(0x798690);
+		*(DWORD*)(0x798690) = 0;
 		// Swap bank checks/offsets to shared bank offets
 		PatchT(0x4E0F5A + 2, (short)2500);
 		PatchT(0x4E0F60 + 2, (short)(2500 + MAX_SHARED_BANK_SLOTS));
@@ -4925,6 +4930,7 @@ int __fastcall OP_CharInventory_PlayerBook_Detour(DWORD* this_ptr, int unused, E
 		PatchT(0x4E0F7D + 2, (short)max(2009, 2000 + MAX_BANK_SLOTS));
 		PatchT(0x4E0F87 + 1, (int)-2000);
 		*(DWORD*)(0x799730) = weather_recvd_799730;
+		*(DWORD*)(0x798690) = saved_798690;
 		return result;
 	}
 	return OP_CharInventory_PlayerBook_Trampoline(this_ptr, Src);
@@ -4943,6 +4949,8 @@ int __fastcall OP_CharInventory_PlayerItem_Detour(DWORD* this_ptr, int unused, E
 
 		DWORD weather_recvd_799730 = *(DWORD*)(0x799730);
 		*(DWORD*)(0x799730) = 0;
+		DWORD saved_798690 = *(DWORD*)(0x798690);
+		*(DWORD*)(0x798690) = 0;
 		// Swap bank checks/offsets to shared bank offets
 		PatchT(0x4E132C + 2, (short)2500);
 		PatchT(0x4E1332 + 2, (short)(2500 + MAX_SHARED_BANK_SLOTS));
@@ -4963,6 +4971,7 @@ int __fastcall OP_CharInventory_PlayerItem_Detour(DWORD* this_ptr, int unused, E
 		PatchT(0x4E137F + 3, (int)0x20B4); // SharedBank[0]
 		PatchT(0x4E1359 + 1, (int)-2000);
 		*(DWORD*)(0x799730) = weather_recvd_799730;
+		*(DWORD*)(0x798690) = saved_798690;
 		return result;
 	}
 	return OP_CharInventory_PlayerItem_Trampoline(this_ptr, Src);
@@ -4981,6 +4990,8 @@ int __fastcall OP_CharInventory_PlayerContainer_Detour(DWORD* this_ptr, int unus
 
 		DWORD weather_recvd_799730 = *(DWORD*)(0x799730);
 		*(DWORD*)(0x799730) = 0;
+		DWORD saved_798690 = *(DWORD*)(0x798690);
+		*(DWORD*)(0x798690) = 0;
 		PatchT(0x4E0C35 + 2, (short)2500);
 		PatchT(0x4E0C3B + 2, (short)(2500 + MAX_SHARED_BANK_SLOTS));
 		PatchT(0x4E0C47 + 1, (int)-2470);
@@ -4989,6 +5000,7 @@ int __fastcall OP_CharInventory_PlayerContainer_Detour(DWORD* this_ptr, int unus
 		PatchT(0x4E0C3B + 2, (short)max(2009, 2000 + MAX_BANK_SLOTS));
 		PatchT(0x4E0C47 + 1, (int)-2000);
 		*(DWORD*)(0x799730) = weather_recvd_799730;
+		*(DWORD*)(0x798690) = saved_798690;
 		return result;
 	}
 	return OP_CharInventory_PlayerContainer_Trampoline(this_ptr, Src);
