@@ -77,6 +77,12 @@ void EQ_WriteMemoryString(DWORD address, const char* value)
 	*(unsigned char*)(address + j) = '\0';
 }
 
+// Read a TRUE/true/1 or FALSE/false/0 boolean from eqclient.ini with the default EQ logic. Sets/Uses defaultValue if not found.
+bool GetEQClientIniFlag_55B947(const char* lpAppName, const char* lpKeyName, char* defaultValue)
+{
+	return reinterpret_cast<bool(__cdecl*)(const char* lpAppName, const char* lpKeyName, char* defaultValue)>(0x55B947)(lpAppName, lpKeyName, defaultValue);
+}
+
 // direct input
 
 //IDirectInput8** EQ_ppIDirectInput8 = (IDirectInput8**)EQ_DINPUT_ROOT;

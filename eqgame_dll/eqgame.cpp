@@ -1957,43 +1957,45 @@ int FRM_FRF_ReplaceMaterial(CDisplay* this_ptr, char* OldMaterial, char* NewMate
 	fix_FRM_FRF_Material(NewMaterial);
 	if (OldMaterial)
 		fix_FRM_FRF_Material(OldMaterial);
-
-	if (isWrist(NewMaterial) && isRobe(NewMaterial))
-		return 1; // Robes just hide the wrist but don't display a sleeve, so for now just keep whatever is already on their wrist
+	if (isLeg(NewMaterial))
+		partial_match = 1;
 
 	int result = CDisplay__ReplaceMaterial_Trampoline(this_ptr, OldMaterial, NewMaterial, Sprite, pColor, 1);
-
-	if (isChest(NewMaterial) && isRobe(NewMaterial) && NewMaterial[8] == '1')
+#ifdef RACE_LOGGING
+	print_chat("FRM ReplaceMaterial %s %s %i", OldMaterial, NewMaterial, result);
+#endif
+	if (result == 0 && OldMaterial && OldMaterial[7] != '0')
 	{
-		char face = NewMaterial[7];
-		char NewLegMaterial[16];
-		char OldLegMaterial[16];
-
-		strncpy(NewLegMaterial, NewMaterial, 3); // Copy actortag
-		strncpy(OldLegMaterial, NewMaterial, 3); // Copy actortag
-		strcpy(&NewLegMaterial[3], "LG__01_MDF");
-		strcpy(&OldLegMaterial[3], "LG__01_MDF");
-		NewLegMaterial[5] = NewMaterial[5];
-		NewLegMaterial[6] = NewMaterial[6];
-
-		// Swap Leg01
-		NewLegMaterial[7] = face;
-		OldLegMaterial[7] = face;
-		//int r2 = CDisplay__ReplaceMaterial_Trampoline(this_ptr, OldLegMaterial, NewLegMaterial, Sprite, pColor, 1);
-
+		char tmp = OldMaterial[7];
+		OldMaterial[7] = '0';
+		result = CDisplay__ReplaceMaterial_Trampoline(this_ptr, OldMaterial, NewMaterial, Sprite, pColor, 1);
 #ifdef RACE_LOGGING
-		print_chat("Extra ReplaceMaterial %s %s %i", OldLegMaterial, NewLegMaterial, r2);
+		print_chat("FRM ReplaceMaterial(retry) %s %s %i", OldMaterial, NewMaterial, result);
 #endif
+		OldMaterial[7] = tmp;
+	}
 
-		// Swap Leg02
-		++OldLegMaterial[8];
-		++NewLegMaterial[8];
-		OldLegMaterial[7] = '0';
-		NewLegMaterial[7] = '0';
-		int r3 = CDisplay__ReplaceMaterial_Trampoline(this_ptr, OldLegMaterial, NewLegMaterial, Sprite, pColor, 1);
+	if (isChest(NewMaterial) && NewMaterial[8] == '1')
+	{
+		if (isRobe(NewMaterial))
+		{
+			char face = NewMaterial[7];
+			char NewLegMaterial[16];
+			char OldLegMaterial[16];
+
+			strncpy(NewLegMaterial, NewMaterial, 3); // Copy actortag
+			strncpy(OldLegMaterial, NewMaterial, 3); // Copy actortag
+			strcpy(&NewLegMaterial[3], "LG__02_MDF");
+			strcpy(&OldLegMaterial[3], "LG__02_MDF");
+			NewLegMaterial[5] = NewMaterial[5];
+			NewLegMaterial[6] = NewMaterial[6];
+
+			// Swap Leg02
+			int r3 = CDisplay__ReplaceMaterial_Trampoline(this_ptr, OldLegMaterial, NewLegMaterial, Sprite, pColor, 1);
 #ifdef RACE_LOGGING
-		print_chat("Extra ReplaceMaterial %s %s %i", OldLegMaterial, NewLegMaterial, r2);
+			print_chat("FRM/FRF Extra ReplaceMaterial %s %s %i", OldLegMaterial, NewLegMaterial, r3);
 #endif
+		}
 	}
 
 	return result;
@@ -2005,8 +2007,11 @@ int __fastcall CDisplay__ReplaceMaterial_Detour(CDisplay* this_ptr, int unused, 
 	{
 		return FRM_FRF_ReplaceMaterial(this_ptr, OldMaterial, NewMaterial, Sprite, pColor, partial_match);
 	}
-
-	return CDisplay__ReplaceMaterial_Trampoline(this_ptr, OldMaterial, NewMaterial, Sprite, pColor, partial_match);
+	int r = CDisplay__ReplaceMaterial_Trampoline(this_ptr, OldMaterial, NewMaterial, Sprite, pColor, partial_match);
+#ifdef RACE_LOGGING
+	print_chat("Orig ReplaceMaterial %s %s %i", OldMaterial, NewMaterial, r);
+#endif
+	return r;
 }
 
 typedef char(__thiscall* EQ_FUNCTION_TYPE_CFacePick__CycleThroughFHEB)(void* this_ptr, int IsNext, int zero);
@@ -2050,23 +2055,17 @@ bool IsLuclinModel(EQSPAWNINFO* spawn)
 	return spawn && spawn->ActorInfo && spawn->ActorInfo->ActorInfoPrototype && spawn->ActorInfo->ActorInfoPrototype->IsLuclinModel;
 }
 
-bool IsFroglokRace(int Race) {
+bool IsFroglokRace(int Race)
+{
 #ifdef RACE_LOGGING
 	print_chat("[IsFroglokRace] %i", Race);
 #endif
 	return Race == 26 || Race == 27 || Race == 330;
 }
 
+// Wish I could make this actually detect if you have the patched s3d files, but it's not really available on zone-in.
 bool IsCustomFroglokSupported()
 {
-	if (!Graphics::IsWorldInitialized())
-	{
-#ifdef RACE_LOGGING
-		print_chat("[IsCustomFroglokSupported] false (World Not Initialized)");
-#endif
-		return false;
-	}
-
 	RaceData* rData = GetCustomRaceData(330, 0);
 	if (!rData)
 	{
@@ -2075,18 +2074,77 @@ bool IsCustomFroglokSupported()
 #endif
 		return false;
 	}
-
-	std::string actorDef = rData->actor_tag + "_ACTORDEF";
-	bool result = Graphics::t3dGetPointerFromDictionary(actorDef.c_str());
-#ifdef RACE_LOGGING
-	print_chat("[IsCustomFroglokSupported] %s (%s)", result ? "true" : "false", actorDef.c_str());
-#endif
-	return result;
+	return true;
 }
 
 bool IsPlayerOrPlayerCorpse(EQSPAWNINFO* player)
 {
 	return (player->Type == 0) || (player->Type == 3);
+}
+
+typedef int(__stdcall* EQ_FUNCTION_TYPE_EQPlayer__GetRaceOffsetForAttachmentITs)(EQSPAWNINFO* entity);
+EQ_FUNCTION_TYPE_EQPlayer__GetRaceOffsetForAttachmentITs EQPlayer__GetRaceOffsetForAttachmentITs_Trampoline;
+int __stdcall EQPlayer__GetRaceOffsetForAttachmentITs_49F7C7(EQSPAWNINFO* entity)
+{
+	if (entity && entity->Race == 330) {
+		return entity->Gender == 1 ? 870 : 840;
+	}
+	return EQPlayer__GetRaceOffsetForAttachmentITs_Trampoline(entity);
+}
+
+WORD ToNonVeliousArmorMaterial(WORD material, BYTE player_class)
+{
+	switch (material)
+	{
+	case 22: // Velious Plate 2
+	case 19: // Velious Plate 1
+		return 3;
+	case 21: // Velious Chain 2
+	case 18: // Velious Chain 1
+		return 2;
+	case 23: // Velious Monk
+		if (player_class == EQ_CLASS_MONK)
+			return 4;
+	case 20: // Velious Leatehr 2
+	case 17: // Velious Leather 1
+		return 1;
+	}
+	return material;
+}
+
+typedef void(__thiscall* EQ_FUNCTION_TYPE_CDisplay__SetDefaultITAttachments)(CDisplay* this_ptr, EQSPAWNINFO* ent, int start_slot, DWORD color);
+EQ_FUNCTION_TYPE_CDisplay__SetDefaultITAttachments CDisplay__SetDefaultITAttachments_Trampoline;
+void __fastcall CDisplay__SetDefaultITAttachments_4A02E8(CDisplay* this_ptr, int unused, EQSPAWNINFO* ent, int start_slot, DWORD color)
+{
+	// Attachments break when Velious materials ID leak into this function. Mask them as their base material ID equivalents.
+	
+	WORD orig_materials[6]; // Chest, Arms, Wrist, Hands, Legs, Feet
+	memcpy(orig_materials, &ent->EquipmentMaterialType[1], sizeof(orig_materials));
+	for (int i = 1; i <= 6; i++)
+	{
+		ent->EquipmentMaterialType[i] = ToNonVeliousArmorMaterial(ent->EquipmentMaterialType[i], ent->Class);
+	}
+
+	// Call Orig
+	CDisplay__SetDefaultITAttachments_Trampoline(this_ptr, ent, start_slot, color);
+
+	// restore
+	memcpy(&ent->EquipmentMaterialType[1], orig_materials, sizeof(orig_materials));
+}
+
+typedef int(__thiscall* EQ_FUNCTION_TYPE_PickEyeColor)(CDisplay* this_ptr, EQSPAWNINFO* player, char param3, int selection);
+EQ_FUNCTION_TYPE_PickEyeColor PickEyeColor_Trampoline;
+int __fastcall PickEyeColor_4A0792(CDisplay* this_ptr, int unused, EQSPAWNINFO* player, char param3, int selection)
+{
+	// Luclin froglok eyes are bugging out the material palette right now. For now, disable this part of the model.
+	if (player && player->Race == 330 && IsLuclinModel(player))
+	{
+#ifdef RACE_LOGGING
+		print_chat("PickEyeColor_4A0792(param3=%i, param4=%i", param3, selection);
+#endif
+		return 0;
+	}
+	return PickEyeColor_Trampoline(this_ptr, player, param3, selection);
 }
 
 typedef int(__thiscall* EQ_FUNCTION_TYPE_EQPlayer__LegalPlayerRace)(EQSPAWNINFO* this_ptr, int in_race);
@@ -2608,19 +2666,19 @@ void __fastcall EQPlayer__ChangeForm_Detour(EQSPAWNINFO* this_ptr, void* unused,
 				}
 				if (illusion->gender == 2)
 				{
-					if (this_ptr->CharInfo)
+					if (this_ptr->CharInfo && (BYTE)this_ptr->CharInfo->Gender <= 1)
 					{
 #ifdef RACE_LOGGING
 						print_chat("[ChangeForm] Using gender %u from CharInfo", this_ptr->CharInfo->Gender);
 #endif
-						illusion->gender = this_ptr->CharInfo->Gender;
+						illusion->gender = (BYTE)this_ptr->CharInfo->Gender;
 					}
 					else
 					{
 #ifdef RACE_LOGGING
 						print_chat("[ChangeForm] Using gender %u from SpawnInfo", this_ptr->Gender);
 #endif
-						illusion->gender = this_ptr->Gender;
+						illusion->gender = this_ptr->Gender == 1 ? 1 : 0;
 					}
 				}
 			}
@@ -3864,6 +3922,8 @@ void ApplySongWindowBytePatches() {
 
 constexpr BYTE kMaterialSlotHead = 0;
 constexpr BYTE kMaterialSlotChest = 1;
+constexpr BYTE kMaterialSlotArms = 2;
+constexpr BYTE kMaterialSlotLegs = 5;
 constexpr BYTE kMaterialSlotPrimary = 7;
 constexpr BYTE kMaterialSlotSecondary = 8; // Shared with 'ranged'
 
@@ -3985,18 +4045,18 @@ WORD ToCanonicalHelmMaterial(WORD material, WORD race)
 			// Vah Shir have their own material IDs when they equip leather/chain/plate helms, but no custom helm.
 		case 661: // VAH (F) Leather Helm
 		case 666: // VAH (M) Leather Helm
-		case 841: // FRM Leather Helm
-		case 871: // FRF Leather Helm
+		case 5841: // FRM Leather Helm
+		case 5871: // FRF Leather Helm
 			return kMaterialLeather; // (1)
 		case 662: // VAH (F) Chain Helm
 		case 667: // VAH (M) Chain Helm
-		case 842:
-		case 872:
+		case 5842: // FRM Chain Helm
+		case 5872: // FRF Chain Helm
 			return kMaterialChain; // (2)
 		case 663: // VAH (F) Plate Helm
 		case 668: // VAH (M) Plate Helm
-		case 843:
-		case 873:
+		case 5843: // FRM Plate Helm
+		case 5873: // FRF Plate Helm
 			return kMaterialPlate; // (3)
 
 			// Converts all the race-specific Velious Helm IT### numbers to the common 240 value
@@ -4041,17 +4101,6 @@ WORD ToCanonicalHelmMaterial(WORD material, WORD race)
 	return material;
 }
 
-bool HelmHelperIsEnabled(char* key)
-{
-	char szResult[255];
-	char szDefault[255];
-	sprintf(szDefault, "%s", "FALSE");
-	DWORD error = GetPrivateProfileStringA("Defaults", key, szDefault, szResult, 255, "./eqclient.ini");
-	if (strcmp(szResult, "TRUE") == 0)
-		return true;
-	return false;
-}
-
 bool DetectHelmFixes()
 {
 	if (DetectHelmFixesComplete)
@@ -4061,45 +4110,43 @@ bool DetectHelmFixes()
 		return false;
 
 	// Check if a known-good value is loaded before continuing
-	int* sprite_definition = Graphics::t3dGetPointerFromDictionary("ELFHE00_DMSPRITEDEF");
-	if (!sprite_definition)
+	int* ptr = Graphics::t3dGetPointerFromDictionary("HUM_ACTORDEF");
+	if (!ptr)
 		return false;
 
-	bool AllLuclinPcModelsOff = HelmHelperIsEnabled("AllLuclinPcModelsOff");
-	bool UseLuclinHumanFemale = HelmHelperIsEnabled("UseLuclinHumanFemale");
-	bool UseLuclinBarbarianFemale = HelmHelperIsEnabled("UseLuclinBarbarianFemale");
-	bool UseLuclinEruditeFemale = HelmHelperIsEnabled("UseLuclinEruditeFemale");
-	bool UseLuclinEruditeMale = HelmHelperIsEnabled("UseLuclinEruditeMale");
-	bool UseLuclinWoodElfFemale = HelmHelperIsEnabled("UseLuclinWoodElfFemale");
-	bool UseLuclinDarkElfFemale = HelmHelperIsEnabled("UseLuclinDarkElfFemale");
-	UseHumanFemaleFix     = (AllLuclinPcModelsOff || !UseLuclinHumanFemale)     && Graphics::t3dGetPointerFromDictionary(kHumanFemaleBaldHead);
-	UseBarbarianFemaleFix = (AllLuclinPcModelsOff || !UseLuclinBarbarianFemale) && Graphics::t3dGetPointerFromDictionary(kBarbarianFemaleBaldHead);
-	UseEruditeFemaleFix   = (AllLuclinPcModelsOff || !UseLuclinEruditeFemale)   && Graphics::t3dGetPointerFromDictionary(kEruditeFemaleBaldHead);
-	UseEruditeMaleFix     = (AllLuclinPcModelsOff || !UseLuclinEruditeMale)     && Graphics::t3dGetPointerFromDictionary(kEruditeMaleBaldHead);
-	UseWoodElfFemaleFix   = (AllLuclinPcModelsOff || !UseLuclinWoodElfFemale)   && Graphics::t3dGetPointerFromDictionary(kWoodElfFemaleBaldHead);
-	UseDarkElfFemaleFix   = (AllLuclinPcModelsOff || !UseLuclinDarkElfFemale)   && Graphics::t3dGetPointerFromDictionary(kDarkElfFemaleBaldHead);
+	UseHumanFemaleFix     = Graphics::t3dGetPointerFromDictionary(kHumanFemaleBaldHead) != nullptr;
+	UseBarbarianFemaleFix = Graphics::t3dGetPointerFromDictionary(kBarbarianFemaleBaldHead) != nullptr;
+	UseEruditeFemaleFix   = Graphics::t3dGetPointerFromDictionary(kEruditeFemaleBaldHead) != nullptr;
+	UseEruditeMaleFix     = Graphics::t3dGetPointerFromDictionary(kEruditeMaleBaldHead) != nullptr;
+	UseWoodElfFemaleFix   = Graphics::t3dGetPointerFromDictionary(kWoodElfFemaleBaldHead) != nullptr;
+	UseDarkElfFemaleFix   = Graphics::t3dGetPointerFromDictionary(kDarkElfFemaleBaldHead) != nullptr;
 	DetectHelmFixesComplete = true;
 	return true;
 }
 
-bool IsHelmPatchedOldModel(WORD race, BYTE gender)
+bool IsHelmPatchedOldModel(EQSPAWNINFO* entity)
 {
 	if (!DetectHelmFixesComplete)
 	{
 		DetectHelmFixes(); // Have to lazy-load this here because this is reached before OnZone() is called during initial login.
 	}
 
+	if (IsLuclinModel(entity))
+	{
+		return false;
+	}
+
 	// Bugged male races
-	if (gender == 0)
+	if (entity->Gender == 0)
 	{
 		// Erudite
-		return race == 3 ? UseEruditeMaleFix : false;
+		return entity->Race == 3 ? UseEruditeMaleFix : false;
 	}
 
 	// Bugged female races
-	if (gender == 1)
+	if (entity->Gender == 1)
 	{
-		switch (race)
+		switch (entity->Race)
 		{
 		case 1: // Human
 			return UseHumanFemaleFix;
@@ -4129,7 +4176,7 @@ int __fastcall SwapHead_Detour(int* cDisplay, int unused_edx, EQSPAWNINFO* entit
 		old_material_or_head = EQPlayer::GetHeadID(entity, old_material_or_head);
 
 		// (2a) Fix broken Velious races by using a special head with no hair/hood graphics underneath their helmet. This stops their hair/hood clipping through the helm.
-		use_bald_head = new_material >= kMaterialVeliousHelm && IsHelmPatchedOldModel(entity->Race, entity->Gender);
+		use_bald_head = new_material >= kMaterialVeliousHelm && IsHelmPatchedOldModel(entity);
 		if (use_bald_head)
 		{
 			PatchSwap(0x4A1C65 + 1, BYTE_BALD_HEAD, 1); // Changes default head 0 -> 5
@@ -4166,6 +4213,9 @@ typedef void(__thiscall* EQ_FUNCTION_TYPE_WearChangeArmor)(int* cDisplay, EQSPAW
 EQ_FUNCTION_TYPE_WearChangeArmor WearChangeArmor_Trampoline;
 void __fastcall WearChangeArmor_Detour(int* cDisplay, int unused_edx, EQSPAWNINFO* entity, BYTE wear_slot, WORD new_material, WORD old_material, DWORD colors, bool from_server)
 {
+#ifdef RACE_LOGGING
+	print_chat("[WearChangeArmor] in slot=%u new=%u old=%u", wear_slot, new_material, old_material);
+#endif
 	int block_wearchange = 0;
 	if (from_server && entity->Texture == 0xFF && entity == EQ_OBJECT_PlayerSpawn)
 	{
@@ -4179,19 +4229,76 @@ void __fastcall WearChangeArmor_Detour(int* cDisplay, int unused_edx, EQSPAWNINF
 	block_outbound_wearchange += block_wearchange;
 	WearChangeArmor_Trampoline(cDisplay, entity, wear_slot, new_material, old_material, colors, from_server);
 	block_outbound_wearchange -= block_wearchange;
+}
 
-	if (wear_slot == kMaterialSlotChest
-		&& entity->Texture == 0xFF
-		&& (entity->Race == 330 || (IsFroglokRace(entity->Race) && IsPlayerOrPlayerCorpse(entity)))
-		&& IsLuclinModel(entity))
+typedef int(__thiscall* EQ_FUNCTION_TYPE_CDisplay__HandleMaterialEx)(CDisplay* this_ptr, EQSPAWNINFO* spawn, int wear_slot, int new_material, int old_material, DWORD new_color, BYTE face);
+EQ_FUNCTION_TYPE_CDisplay__HandleMaterialEx CDisplay__HandleMaterialEx_Trampoline;
+int __fastcall CDisplay__HandleMaterialEx_4A1EB7(CDisplay* this_ptr, int unused, EQSPAWNINFO* entity, int wear_slot, int new_material, int old_material, DWORD new_color, BYTE face)
+{
+#ifdef RACE_LOGGING
+	print_chat("HandleMaterialEx slot=%i new=%i old=%i", wear_slot, new_material, old_material);
+#endif
+	// Classic Frogloks don't have velious textures (yet)
+	// Luclin Models don't have working Velious textures.
+	WORD orig_new_material = new_material;
+	bool is_armor = entity->Texture == 0xFF && wear_slot > 0 && wear_slot < kMaterialSlotPrimary;
+	if (is_armor && (IsFroglokRace(entity->Race) || IsLuclinModel(entity) || entity->Race == 130))
 	{
-		// Fixing Luclin Frogloks when unequipping a robe (ensuring legs update)
-		if ((new_material < 10 || new_material > 16) && (old_material >= 10 && old_material <= 16))
+		new_material = ToNonVeliousArmorMaterial(new_material, entity->Class);
+		old_material = ToNonVeliousArmorMaterial(old_material, entity->Class);
+	}
+
+	int result = CDisplay__HandleMaterialEx_Trampoline(this_ptr, entity, wear_slot, new_material, old_material, new_color, face);
+
+	// Try to keep the original material saved. So if we transform it carries over.
+	if (is_armor && result == 1 && orig_new_material != new_material && entity->EquipmentMaterialType[wear_slot] == new_material)
+		entity->EquipmentMaterialType[wear_slot] = orig_new_material;
+
+	// Fix some Robe stuff on Luclin Frogloks:
+	if (is_armor && IsFroglokRace(entity->Race) && IsLuclinModel(entity))
+	{
+		if (wear_slot == kMaterialSlotChest)
 		{
-			WearChangeArmor_Trampoline(cDisplay, entity, 2, entity->EquipmentMaterialType[2], entity->EquipmentMaterialType[2], entity->EquipmentMaterialColor[2], true);
-			WearChangeArmor_Trampoline(cDisplay, entity, 5, entity->EquipmentMaterialType[5], entity->EquipmentMaterialType[5], entity->EquipmentMaterialColor[5], true);
+			// When removing a robe, uploads the loin cloth back to the legs material
+			bool removed_robe = (new_material < 10 || new_material > 16) && (old_material >= 10 && old_material <= 16);
+			if (removed_robe)
+			{
+				WORD legs_material = entity->EquipmentMaterialType[kMaterialSlotLegs];
+				WORD tmp_legs_material = ToNonVeliousArmorMaterial(legs_material, entity->Class);
+				int r1 = CDisplay__HandleMaterialEx_Trampoline(
+					this_ptr,
+					entity,
+					kMaterialSlotLegs,
+					tmp_legs_material,
+					tmp_legs_material,
+					entity->EquipmentMaterialColor[kMaterialSlotLegs],
+					face);
+
+				if (r1 == 1 && legs_material != tmp_legs_material && entity->EquipmentMaterialType[kMaterialSlotLegs] == tmp_legs_material)
+					entity->EquipmentMaterialType[kMaterialSlotLegs] = legs_material;
+			}
+		}
+		else if (wear_slot == kMaterialSlotLegs)
+		{
+			// When swapping pants while wearing a robe, make sure the robe graphic stays as the lion cloth texture.
+			WORD chest_material = entity->EquipmentMaterialType[kMaterialSlotChest];
+			if (chest_material >= 10 && chest_material <= 16)
+			{
+				// This will call our ReplaceMaterial hook, which will overwrite the loin cloth with the robe afterward
+				CDisplay__HandleMaterialEx_Trampoline(
+					this_ptr,
+					entity,
+					kMaterialSlotChest,
+					chest_material,
+					chest_material,
+					entity->EquipmentMaterialColor[kMaterialSlotChest],
+					face
+				);
+			}
 		}
 	}
+
+	return result;
 }
 
 typedef int(__thiscall* EQ_FUNCTION_TYPE_SwapModel)(int* cdisplay, EQSPAWNINFO* entity, int wear_slot, char* ITstr, int from_server);
@@ -4370,6 +4477,26 @@ bool SharedBank_HandleMessages(DWORD id, DWORD value, bool is_request)
 #endif
 		return true;
 	}
+	return false;
+}
+
+bool SB_CheckNoRent(EQITEMINFO* item)
+{
+	if (!item)
+		return false;
+
+	if (item->NoRent == 0)
+		return true;
+
+	if (item->IsContainer == 1)
+	{
+		for (int i = 0; i < 10; i++)
+		{
+			if (item->Container.Item[i] && item->Container.Item[i]->NoRent == 0)
+				return true;
+		}
+	}
+
 	return false;
 }
 
@@ -4587,6 +4714,12 @@ int __stdcall MoveItem_Detour(int fromSlot, int toSlot, int printChat, int b2)
 		return 0;
 	}
 
+	if (SB_CheckNoRent(charInfo->CursorItem))
+	{
+		print_chat("You cannot put No Rent items in the shared bank.");
+		return 0;
+	}
+
 	EQITEMINFO** pFromSlot = nullptr;
 	EQITEMINFO* FromTheContainer = nullptr;
 	EQITEMINFO** pToSlot = nullptr;
@@ -4795,12 +4928,12 @@ DWORD __fastcall CInvSlotMgr__UpdateSlots_Detour(int this_ptr, int unused)
 	DWORD LastUpdateTime = *(DWORD*)(this_ptr + CInvSlotMgr_LastUpdateTime_Offset);
 	DWORD result = CInvSlotMgr__UpdateSlots_Trampoline(this_ptr);
 
-	EQWND* bank = *(EQWND**)0x63D654;
-	if (bank && bank->IsVisible)
-	{
-		// Executes additional UpdateSlots logic.
+	// Executes additional UpdateSlots logic.
 		// Only runs when the real UpdateSlots refreshes (100ms interval)
-		if (LastUpdateTime != *(DWORD*)(this_ptr + CInvSlotMgr_LastUpdateTime_Offset))
+	if (LastUpdateTime != *(DWORD*)(this_ptr + CInvSlotMgr_LastUpdateTime_Offset))
+	{
+		EQWND* bank = *(EQWND**)0x63D654;
+		if (bank && bank->IsVisible)
 		{
 			auto* charInfo = EQ_OBJECT_CharInfo;
 			if (!charInfo)
@@ -4864,7 +4997,9 @@ DWORD __fastcall CInvSlotMgr__UpdateSlots_Detour(int this_ptr, int unused)
 				}
 			}
 		}
+		*(DWORD*)(this_ptr + CInvSlotMgr_LastUpdateTime_Offset) = EqGetTime();
 	}
+
 	return result;
 }
 
@@ -5171,6 +5306,18 @@ void PatchCheckLoreConflict()
 // Bank Improvements [end]
 // ---------------------------------------------------------------------------------------
 
+typedef int(__thiscall* EQ_FUNCTION_TYPE_CDisplay__InitWorld)(CDisplay* this_ptr);
+EQ_FUNCTION_TYPE_CDisplay__InitWorld CDisplay__InitWorld_Trampoline;
+int __fastcall CDisplay__InitWorld_4A44F4(CDisplay* this_ptr, int unused)
+{
+	if (UseLuclinFrogloks)
+	{
+		BYTE* byte_ptr = (BYTE*)this_ptr;
+		byte_ptr[0xA0] = 1; // This flag is set during InitWorld if any Luclin models are enabled
+	}
+	return CDisplay__InitWorld_Trampoline(this_ptr);
+}
+
 DWORD gmfadress = 0;
 DWORD wpsaddress = 0;
 DWORD swAddress = 0;
@@ -5202,77 +5349,86 @@ void CheckPromptUIChoice()
 	}
 }
 
+void CopyIniSettingsToEqclient(const char* iniFile)
+{
+	char section_names[4096];  // Buffer to hold section names
+	char key_values_buffer[4096];  // Buffer to hold key-value pairs
+	DWORD section_names_size = GetPrivateProfileSectionNamesA(section_names, sizeof(section_names), iniFile);
+
+	if (section_names_size > 0)
+	{
+		const char* section = section_names;
+		while (*section)
+		{
+			DWORD size = GetPrivateProfileSectionA(section, key_values_buffer, sizeof(key_values_buffer), iniFile);
+			if (size > 0)
+			{
+				const char* key_value = key_values_buffer;
+				while (*key_value)
+				{
+					std::string keyValue(key_value);
+					size_t pos = keyValue.find('=');
+					if (pos != std::string::npos)
+					{
+						std::string key = keyValue.substr(0, pos);
+						std::string value = keyValue.substr(pos + 1);
+						char szResult[255];
+						GetPrivateProfileStringA(section, key.c_str(), "*NULL*", szResult, 32, "./eqclient.ini");
+						if (strcmp(szResult, value.c_str()) != 0)
+							WritePrivateProfileStringA(section, key.c_str(), value.c_str(), "./eqclient.ini");
+					}
+					key_value += strlen(key_value) + 1;  // Move to the next entry
+				}
+			}
+			section += strlen(section) + 1;  // Move to the next section
+		}
+	}
+}
 
 void CheckClientMiniMods()
 {
+	// Does a one-time override of some values
 	char szResult[255];
-	char szDefault[255];
-	sprintf(szDefault, "%s", "NONE");
-	DWORD error = GetPrivateProfileStringA("Defaults", "EnableBrownSkeletonHack", szDefault, szResult, 255, "./eqclient.ini");
-	if (strcmp(szResult, "FALSE") == 0) // False
+	GetPrivateProfileStringA("Defaults", "DefaultsVersion", "0", szResult, 32, "./eqclient.ini");
+	int defaultsVer = isdigit(szResult[0]) ? atoi(szResult) : 0;
+	if (defaultsVer == 0)
 	{
-		g_bEnableBrownSkeletons = false;
-	}
-	else if (strcmp(szResult, "NONE") == 0) // Not found
-	{
-		WritePrivateProfileStringA_tramp("Defaults", "EnableBrownSkeletonHack", "FALSE", "./eqclient.ini");
-	}
-	else // any other value (1, true, potato)
-	{
-		g_bEnableBrownSkeletons = true;
-	}
-
-
-	error = GetPrivateProfileStringA("Defaults", "EnableExtendedNameplateDistance", szDefault, szResult, 255, "./eqclient.ini");
-	if (strcmp(szResult, "FALSE") == 0) // False
-	{
-		g_bEnableExtendedNameplates = false;
-	}
-	else if (strcmp(szResult, "NONE") == 0) // Not found
-	{
-		g_bEnableExtendedNameplates = false;
-		WritePrivateProfileStringA_tramp("Defaults", "EnableExtendedNameplateDistance", "FALSE", "./eqclient.ini");
-	}
-	else
-	{
-		g_bEnableExtendedNameplates = true;
+		WritePrivateProfileString("Defaults", "LoadArmor17", "TRUE", "./eqclient.ini");
+		WritePrivateProfileString("Defaults", "LoadArmor18", "TRUE", "./eqclient.ini");
+		WritePrivateProfileString("Defaults", "LoadArmor19", "TRUE", "./eqclient.ini");
+		WritePrivateProfileString("Defaults", "LoadArmor20", "TRUE", "./eqclient.ini");
+		WritePrivateProfileString("Defaults", "LoadArmor21", "TRUE", "./eqclient.ini");
+		WritePrivateProfileString("Defaults", "LoadArmor22", "TRUE", "./eqclient.ini");
+		WritePrivateProfileString("Defaults", "LoadArmor23", "TRUE", "./eqclient.ini");
+		WritePrivateProfileString("Defaults", "LoadVeliousArmorsWithLuclin", "TRUE", "./eqclient.ini");
+		WritePrivateProfileString("Defaults", "DoProperTinting", "TRUE", "./eqclient.ini");
+		WritePrivateProfileString("Defaults", "VideoModeBitsPerPixel", "32", "./eqclient.ini");
+		WritePrivateProfileString("Defaults", "TextureCache", "FALSE", "./eqclient.ini");
+		WritePrivateProfileString("VideoMode", "BitsPerPixel", "32", "./eqclient.ini");
+		WritePrivateProfileString("Defaults", "DefaultsVersion", "1", "./eqclient.ini");
 	}
 
-	error = GetPrivateProfileStringA("Defaults", "EnableClassicMusic", szDefault, szResult, 255, "./eqclient.ini");
-	if (strcmp(szResult, "FALSE") == 0) // False
+	// Copy all overrides from an optional file (provided by patcher)
+	CopyIniSettingsToEqclient("./quarmclient.ini");
+
+	g_bEnableBrownSkeletons = GetEQClientIniFlag_55B947("Defaults", "EnableBrownSkeletonHack", "FALSE");
+	g_bEnableExtendedNameplates = GetEQClientIniFlag_55B947("Defaults", "EnableExtendedNameplateDistance", "TRUE");
+	g_bEnableClassicMusic = GetEQClientIniFlag_55B947("Defaults", "EnableClassicMusic", "FALSE");
+	if (g_bEnableClassicMusic)
 	{
-		g_bEnableClassicMusic = false;
-	}
-	else if (strcmp(szResult, "NONE") == 0) // Not found
-	{
-		g_bEnableClassicMusic = false;
-		WritePrivateProfileStringA_tramp("Defaults", "EnableClassicMusic", "FALSE", "./eqclient.ini");
-	}
-	else
-	{
-		g_bEnableClassicMusic = true;
 		EzDetour(0x00550AF8, &Eqmachooks::CEQMusicManager__Set_Detour, &Eqmachooks::CEQMusicManager__Set_Trampoline);
 		EzDetour(0x004D54C1, &Eqmachooks::CEQMusicManager__Play_Detour, &Eqmachooks::CEQMusicManager__Play_Trampoline);
 		//EzDetour(0x004D518B, &Eqmachooks::CEQMusicManager__WavPlay_Detour, &Eqmachooks::CEQMusicManager__WavPlay_Trampoline);
 	}
 
-	error = GetPrivateProfileStringA("Defaults", "SongWindowAutoHide", szDefault, szResult, 255, "./eqclient.ini");
-	if (strcmp(szResult, "TRUE") == 0) // True
-	{
-		g_bSongWindowAutoHide = true;
-	}
-	else if (strcmp(szResult, "NONE") == 0) // Not found
-	{
-		g_bSongWindowAutoHide = false;
-		WritePrivateProfileStringA_tramp("Defaults", "SongWindowAutoHide", "FALSE", "./eqclient.ini");
-	}
-	else // Default off
-	{
-		g_bSongWindowAutoHide = false;
-	}
+	g_bSongWindowAutoHide = GetEQClientIniFlag_55B947("Defaults", "SongWindowAutoHide", "FALSE");
 
-	error = GetPrivateProfileStringA("Defaults", "UseLuclinFroglok", szDefault, szResult, 255, "./eqclient.ini");
-	if (strcmp(szResult, "FALSE") == 0) // False
+	if (GetEQClientIniFlag_55B947("Defaults", "UseLuclinFroglok", "FALSE"))
+	{
+		UseClassicFrogloks = false;
+		UseLuclinFrogloks = true;
+	}
+	else
 	{
 		UseClassicFrogloks = true;
 		UseLuclinFrogloks = false;
@@ -5281,23 +5437,12 @@ void CheckClientMiniMods()
 		PutCustomRaceData(330, 1, "FKM", "");
 		PutCustomRaceData(330, 2, "FKM", "");
 	}
-	else if (strcmp(szResult, "NONE") == 0) // Not found
+
+	if (GetEQClientIniFlag_55B947("Defaults", "UnlockVeliousTextures", "FALSE"))
 	{
-		UseClassicFrogloks = true;
-		UseLuclinFrogloks = false;
-		PutCustomRaceData(330, 0, "FKM", "");
-		// PutCustomRaceData(330, 1, "FKF", "FKM"); TODO: We don't have FKF created yet. Use FKM for now.
-		PutCustomRaceData(330, 1, "FKM", "");
-		PutCustomRaceData(330, 2, "FKM", "");
-		WritePrivateProfileStringA_tramp("Defaults", "UseLuclinFroglok", "FALSE", "./eqclient.ini");
-	}
-	else
-	{
-		UseClassicFrogloks = false;
-		UseLuclinFrogloks = true;
+		PatchT(0x4A1ED8 + 3, (int)23);
 	}
 }
-
 
 void InitHooks()
 {
@@ -5413,6 +5558,7 @@ void InitHooks()
 	CDisplay__GetAlternateAnimTag_Trampoline = (EQ_FUNCTION_TYPE_CDisplay__GetAlternateAnimTag)DetourFunction((PBYTE)0x4D8065, (PBYTE)CDisplay__GetAlternateAnimTag_Detour);
 	EQ_Character__InitInnates_Trampoline = (EQ_FUNCTION_TYPE_EQ_Character__InitInnates)DetourFunction((PBYTE)0x4BD4F5, (PBYTE)EQ_Character__InitInnates_Detour);
 	EQPlayer__SetSounds_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__SetSounds)DetourFunction((PBYTE)0x50C2C9, (PBYTE)EQPlayer__SetSounds_Detour);
+	CDisplay__InitWorld_Trampoline = (EQ_FUNCTION_TYPE_CDisplay__InitWorld)DetourFunction((PBYTE)0x4A44F4, (PBYTE)CDisplay__InitWorld_4A44F4);
 
 	// Horse Support
 	HasInvalidRiderTexture_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__HasInvalidRiderTexture)DetourFunction((PBYTE)0x0051FCA6, (PBYTE)HasInvalidRiderTexture_Detour);
@@ -5423,9 +5569,13 @@ void InitHooks()
 	EQPlayer__Dismount_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__Dismount)DetourFunction((PBYTE)0x51FF5F, (PBYTE)EQPlayer__Dismount_Detour);
 	DetourFunction((PBYTE)0x51FCE6, (PBYTE)IsHorse);
 	
-	// Frogs
+	// Frogs and some luclin related fixes
 	ApplyFroglokSupport();
 	CDisplay__ReplaceMaterial_Trampoline = (EQ_FUNCTION_TYPE_CDisplay__ReplaceMaterial)DetourFunction((PBYTE)0x4A0A95, (PBYTE)CDisplay__ReplaceMaterial_Detour);
+	EQPlayer__GetRaceOffsetForAttachmentITs_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__GetRaceOffsetForAttachmentITs)DetourFunction((PBYTE)0x49F7C7, (PBYTE)EQPlayer__GetRaceOffsetForAttachmentITs_49F7C7);
+	PickEyeColor_Trampoline = (EQ_FUNCTION_TYPE_PickEyeColor)DetourFunction((PBYTE)0x4A0792, (PBYTE)PickEyeColor_4A0792);
+	CDisplay__SetDefaultITAttachments_Trampoline = (EQ_FUNCTION_TYPE_CDisplay__SetDefaultITAttachments)DetourFunction((PBYTE)0x4A02E8, (PBYTE)CDisplay__SetDefaultITAttachments_4A02E8);
+	CDisplay__HandleMaterialEx_Trampoline = (EQ_FUNCTION_TYPE_CDisplay__HandleMaterialEx)DetourFunction((PBYTE)0x4A1EB7, (PBYTE)CDisplay__HandleMaterialEx_4A1EB7);
 
 	// Sends DLL_VERSION to the server on zone-in
 	OnZoneCallbacks.push_back(SendDllVersion_OnZone);
