@@ -4449,6 +4449,12 @@ DWORD CInvSlotMgr_MaxInvSlots = 450; // Set by PatchMaxBankSlots
 DWORD CInvSlotMgr_NumInvSlots_Offset = 0x70C; // Set by PatchMaxBankSlots
 DWORD CInvSlotMgr_LastUpdateTime_Offset = 0x710; // Set by PatchMaxBankSlots
 
+void SharedBank_OnZone()
+{
+	Rule_Shared_Bank_Mode = 0;
+	Rule_Shared_Bank_Slots_Available = 0;
+}
+
 bool SharedBank_HandleMessages(DWORD id, DWORD value, bool is_request)
 {
 	// Server initiates the shared bank negotiation
@@ -5584,6 +5590,7 @@ void InitHooks()
 	// [BigBank/SharedBank]
 	PatchExtraBankSlotSupport();
 	PatchCheckLoreConflict();
+	OnZoneCallbacks.push_back(SharedBank_OnZone);
 	CustomSpawnAppearanceMessageHandlers.push_back(SharedBank_HandleMessages);
 	CInvSlotMgr__UpdateSlots_Trampoline = (EQ_FUNCTION_TYPE_CInvSlotMgr__UpdateSlots)DetourFunction((PBYTE)0x423089, (PBYTE)CInvSlotMgr__UpdateSlots_Detour); // Displays the new slots
 	MoveItem_Trampoline = (EQ_FUNCTION_TYPE_MoveItem)DetourFunction((PBYTE)0x422B1C, (PBYTE)MoveItem_Detour); // Moves items to/from the new slots
