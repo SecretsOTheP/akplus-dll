@@ -87,6 +87,10 @@ bool Rule_Buffstacking_Patch_Enabled = false;
 int Rule_Num_Short_Buffs = 0;
 int Rule_Max_Buffs = EQ_NUM_BUFFS;
 
+// [Shared Bank]
+int Rule_Shared_Bank_Mode = 0; // 0 = Disabled, 1 = Enabled, 2 = Disabled (Self Found), 3 = Disabled (Global), 4 = Disabled (Upgraded Required)
+int Rule_Shared_Bank_Slots_Available = 0; // Controls which slots we can deposit to. Set by the server.
+
 typedef signed int(__cdecl* ProcessGameEvents_t)();
 ProcessGameEvents_t return_ProcessGameEvents;
 ProcessGameEvents_t return_ProcessMouseEvent;
@@ -99,6 +103,7 @@ BOOL bWindowedMode = true;
 BOOL RightHandMouse = true;
 
 // Callbacks run on zone
+std::vector<std::function<void(ClientZoneEntry_Struct*)>> ModifyZoneEntryCallbacks;
 std::vector<std::function<void()>> OnZoneCallbacks;
 std::vector<std::function<void(CDisplay*)>> InitGameUICallbacks;
 std::vector<std::function<void()>> DeactivateUICallbacks;
@@ -441,7 +446,7 @@ void SendCustomSpawnAppearanceMessage(unsigned __int16 feature_id, unsigned __in
 void HandleCustomSpawnAppearanceMessage(SpawnAppearance_Struct* message)
 {
 	// TODO: Maybe in the future we could encode data into spawn_id field too, but let's keep it simple for now.
-	if (message->type == SpawnAppearanceType_ClientDllMessage && message->spawn_id == 0) {
+	if (message->type >= SpawnAppearanceType_ClientDllMessage && message->spawn_id == 0) {
 		bool is_request = (message->parameter >> 31) == 0;
 		DWORD feature_id = message->parameter >> 16 & 0x7FFFu;
 		DWORD feature_value = message->parameter & 0xFFFFu;
@@ -450,6 +455,7 @@ void HandleCustomSpawnAppearanceMessage(SpawnAppearance_Struct* message)
 				return;
 			}
 		}
+		return;
 	}
 }
 // Hook to delegate to HandleCustomSpawnAppearanceMessage
@@ -713,6 +719,14 @@ public:
 		else if (Opcode == 0x4092 && len >= sizeof(WearChange_Struct))
 		{
 			Handle_In_OP_WearChange((WearChange_Struct*)Buffer);
+		}
+		else if (Opcode == 0x5165 && len >= sizeof(SharedBankInfo_Struct))
+		{
+			Handle_OP_SharedBankInfo((SharedBankInfo_Struct*)Buffer);
+		}
+		else if (Opcode == 0x5265 && len >= sizeof(BuffStackingInfo_Struct))
+		{
+			Handle_OP_BuffStackingInfo((BuffStackingInfo_Struct*)Buffer);
 		}
 		return CEverQuest__HandleWorldMessage_Trampoline(con,Opcode,Buffer,len);
 	}
@@ -983,6 +997,20 @@ int __cdecl CEverQuest__SendMessage_Detour(int* connection, int opcode, char* bu
 	{
 		if (Handle_Out_OP_WearChange((WearChange_Struct*)buffer))
 			return 0;
+	}
+	else if (opcode == 0x4028 && len == sizeof(ClientZoneEntry_Struct))
+	{
+		ClientZoneEntry_Struct* cze = (ClientZoneEntry_Struct*)buffer;
+		// Zero out everything except char name
+		cze->unknown00 = 0;
+		for (int i = strlen(cze->char_name) + 1; i < 64; i++)
+		{
+			cze->char_name[i] = 0;
+		}
+		// Handle custom stuff
+		for (auto& callback : ModifyZoneEntryCallbacks) {
+			callback(cze);
+		}
 	}
 	return CEverQuest__SendMessage_Trampoline(connection, opcode, buffer, len, unknown);
 }
@@ -3172,6 +3200,15 @@ int __fastcall EQMACMQ_DETOUR_CEverQuest__InterpretCmd(void* this_ptr, void* not
 		return 0;
 	}
 
+	if (strcmp(a2, "/rules") == 0) {
+		print_chat("Rule_Shared_Bank_Mode = %i", Rule_Shared_Bank_Mode);
+		print_chat("Rule_Shared_Bank_Slots_Available = %i", Rule_Shared_Bank_Slots_Available);
+		print_chat("Rule_Num_Short_Buffs = %i", Rule_Num_Short_Buffs);
+		print_chat("Rule_Max_Buffs = %i", Rule_Max_Buffs);
+		print_chat("Rule_Buffstacking_Patch_Enabled = %i", Rule_Buffstacking_Patch_Enabled ? 1 : 0);
+		return 0;
+	}
+
 	else if ((strcmp(a2, "/raiddump") == 0) || (strcmp(a2, "/outputfile raid") == 0)) {
 		// beginning of raid structure
 		DWORD raid_ptr = 0x007914D0;
@@ -3263,6 +3300,11 @@ void SendDllVersion_OnZone()
 	SendCustomSpawnAppearanceMessage(DLL_VERSION_MESSAGE_ID, DLL_VERSION, true);
 }
 
+void SendDllVersion_OnZoneEntry(ClientZoneEntry_Struct* cze)
+{
+	*(WORD*)(&cze->dll_version[0]) = DLL_VERSION;
+}
+
 // Re-sends the DllVersion if the server requested it from us
 bool HandleDllVersionRequest(DWORD id, DWORD value, bool is_request)
 {
@@ -3297,6 +3339,7 @@ thread_local bool ShortBuffSupport_ReturnSongBuffs = false;
 
 // -- [Handshake / Initialization] --
 
+// Deprecated
 void BuffstackingPatch_OnZone()
 {
 	// Send handshake message to enable the client/server buffstacking changes.
@@ -3307,7 +3350,7 @@ void BuffstackingPatch_OnZone()
 		SendCustomSpawnAppearanceMessage(CustomSpawnAppearanceMessage_BuffStackingPatchWithoutSongWindowHandshake, BSP_VERSION_1, true);
 }
 
-// Callback notification on server response to handshake
+// Deprecated Callback notification on server response to handshake
 bool BuffstackingPatch_HandleHandshake(DWORD id, DWORD value, bool is_request)
 {
 
@@ -3353,6 +3396,37 @@ bool BuffstackingPatch_HandleHandshake(DWORD id, DWORD value, bool is_request)
 		SendCustomSpawnAppearanceMessage(id, value, false);
 	}
 	return true;
+}
+
+void SendBuffStackingInfo_OnZoneEntry(ClientZoneEntry_Struct* cze)
+{
+	bool is_new_ui = *(BYTE*)0x8092D8 != 0;
+	if (is_new_ui)
+	{
+		cze->buffstacking_support = 1;
+		cze->song_window_slots = 15; // Server will cap this to 6 anyway
+	}
+	else
+	{
+		cze->buffstacking_support = 1;
+		cze->song_window_slots = 0;
+	}
+}
+
+void Handle_OP_BuffStackingInfo(BuffStackingInfo_Struct* bsi)
+{
+	if (bsi->buffstacking == BSP_VERSION_1)
+	{
+		Rule_Buffstacking_Patch_Enabled = true;
+		Rule_Num_Short_Buffs = bsi->song_window_slots;
+		Rule_Max_Buffs = EQ_NUM_BUFFS + Rule_Num_Short_Buffs;
+	}
+	else
+	{
+		Rule_Buffstacking_Patch_Enabled = false;
+		Rule_Num_Short_Buffs = 0;
+		Rule_Max_Buffs = EQ_NUM_BUFFS;
+	}
 }
 
 // -- [Helper Functions] --
@@ -4440,50 +4514,23 @@ void ApplyTintPatches()
 constexpr WORD CustomSpawnAppearanceMessage_SharedBankSlotsSupported = 5;
 constexpr WORD CustomSpawnAppearanceMessage_SharedBankMode = 6;
 
-int Rule_Shared_Bank_Mode = 0; // 0 = Disabled, 1 = Enabled, may add more later
-int Rule_Shared_Bank_Slots_Available = 0; // Controls which slots we can deposit to. Set by the server.
-
 DWORD MAX_SHARED_BANK_SLOTS = 0; // Set by PatchMaxBankSlots
 DWORD MAX_BANK_SLOTS = 8; // Set by PatchMaxBankSlots
 DWORD CInvSlotMgr_MaxInvSlots = 450; // Set by PatchMaxBankSlots
 DWORD CInvSlotMgr_NumInvSlots_Offset = 0x70C; // Set by PatchMaxBankSlots
 DWORD CInvSlotMgr_LastUpdateTime_Offset = 0x710; // Set by PatchMaxBankSlots
 
-void SharedBank_OnZone()
+void SharedBank_ClientZoneEntry(ClientZoneEntry_Struct* cze)
 {
 	Rule_Shared_Bank_Mode = 0;
 	Rule_Shared_Bank_Slots_Available = 0;
+	cze->shared_bank = MAX_SHARED_BANK_SLOTS;
 }
 
-bool SharedBank_HandleMessages(DWORD id, DWORD value, bool is_request)
+void Handle_OP_SharedBankInfo(SharedBankInfo_Struct* sbi)
 {
-	// Server initiates the shared bank negotiation
-	// We just wait for the message and then respond
-
-	if (id == CustomSpawnAppearanceMessage_SharedBankSlotsSupported)
-	{
-		Rule_Shared_Bank_Slots_Available = value > MAX_SHARED_BANK_SLOTS ? MAX_SHARED_BANK_SLOTS : value;
-#ifdef BANK_LOGGING
-		print_chat("[SharedBank] Server sent %u shared bank slots available", value);
-#endif
-		if (is_request)
-		{
-#ifdef BANK_LOGGING
-			print_chat("[SharedBank] Responding with %i shared bank slots", Rule_Shared_Bank_Slots_Available);
-#endif
-			SendCustomSpawnAppearanceMessage(CustomSpawnAppearanceMessage_SharedBankSlotsSupported, Rule_Shared_Bank_Slots_Available, false);
-		}
-		return true;
-	}
-	else if (id == CustomSpawnAppearanceMessage_SharedBankMode)
-	{
-		Rule_Shared_Bank_Mode = value;
-#ifdef BANK_LOGGING
-		print_chat("[SharedBank] Server sent shared bank mode %i", Rule_Shared_Bank_Mode);
-#endif
-		return true;
-	}
-	return false;
+	Rule_Shared_Bank_Mode = sbi->mode;
+	Rule_Shared_Bank_Slots_Available = sbi->bag_count > MAX_SHARED_BANK_SLOTS ? MAX_SHARED_BANK_SLOTS : sbi->bag_count;
 }
 
 bool SB_CheckNoRent(EQITEMINFO* item)
@@ -4697,16 +4744,22 @@ int __stdcall MoveItem_Detour(int fromSlot, int toSlot, int printChat, int b2)
 	// - Lore Item conflict on the item/bag contents moved to the cursor
 	// - Moving 'No Drop' item/bag contents to the shared bank
 
-	if (Rule_Shared_Bank_Mode != 1)
+	switch (Rule_Shared_Bank_Mode)
 	{
-		if (Rule_Shared_Bank_Mode == 2)
-		{
-			print_chat("Shared bank is disabled for self-found characters.");
-		}
-		else
-		{
-			print_chat("Shared bank is disabled. Try again later.");
-		}
+	case 0: // Uninitialized
+		print_chat("Shared bank is disabled. Try again later.");
+		return 0;
+	case 1: // Enabled
+		break;
+	case 2: // Disabled (Self Found)
+		print_chat("Shared bank is disabled for self-found characters.");
+		return 0;
+	case 3: // Disabled (Server Rule)
+		print_chat("Shared bank is disabled until furthur notice.");
+		return 0;
+	case 4: // Disabled (Out of Date)
+	default:
+		print_chat("Shared bank is disabled. Please update your client.");
 		return 0;
 	}
 
@@ -5585,13 +5638,13 @@ void InitHooks()
 
 	// Sends DLL_VERSION to the server on zone-in
 	OnZoneCallbacks.push_back(SendDllVersion_OnZone);
+	ModifyZoneEntryCallbacks.push_back(SendDllVersion_OnZoneEntry);
 	CustomSpawnAppearanceMessageHandlers.push_back(HandleDllVersionRequest);
 
 	// [BigBank/SharedBank]
 	PatchExtraBankSlotSupport();
 	PatchCheckLoreConflict();
-	OnZoneCallbacks.push_back(SharedBank_OnZone);
-	CustomSpawnAppearanceMessageHandlers.push_back(SharedBank_HandleMessages);
+	ModifyZoneEntryCallbacks.push_back(SharedBank_ClientZoneEntry);
 	CInvSlotMgr__UpdateSlots_Trampoline = (EQ_FUNCTION_TYPE_CInvSlotMgr__UpdateSlots)DetourFunction((PBYTE)0x423089, (PBYTE)CInvSlotMgr__UpdateSlots_Detour); // Displays the new slots
 	MoveItem_Trampoline = (EQ_FUNCTION_TYPE_MoveItem)DetourFunction((PBYTE)0x422B1C, (PBYTE)MoveItem_Detour); // Moves items to/from the new slots
 	OP_MerchantItemPacket_Trampoline = (EQ_FUNCTION_TYPE_OP_MerchantItemPacket)DetourFunction((PBYTE)0x4E2DF9, (PBYTE)OP_MerchantItemPacket_Detour); // Loading items for shared bank slots
@@ -5601,7 +5654,8 @@ void InitHooks()
 
 	// [BuffStackingPatch:Main]
 	EQCharacter__FindAffectSlot_Trampoline = (EQ_FUNCTION_TYPE_EQCharacter__FindAffectSlot)DetourFunction((PBYTE)0x004C7A3E, (PBYTE)EQCharacter__FindAffectSlot_Detour);
-	OnZoneCallbacks.push_back(BuffstackingPatch_OnZone);
+	OnZoneCallbacks.push_back(BuffstackingPatch_OnZone); // deprecated
+	ModifyZoneEntryCallbacks.push_back(SendBuffStackingInfo_OnZoneEntry);
 	CustomSpawnAppearanceMessageHandlers.push_back(BuffstackingPatch_HandleHandshake);
 	// [BuffStackingPacth:SongWindow]
 	EQCharacter__GetBuff_Trampoline = (EQ_FUNCTION_TYPE_EQCharacter__GetBuff)DetourFunction((PBYTE)0x004C465A, (PBYTE)EQCharacter__GetBuff_Detour); // Supports reading buffs 16-30 in Song Window
