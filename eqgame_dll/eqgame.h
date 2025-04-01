@@ -49,10 +49,37 @@ struct Illusion_Struct
 	int size;
 };
 
+// Note: Normally this packet is just char_name[64], and extra data is NOT zero'd out.
+// On Quarm we support custom values in this packet, starting from the end.
+// If custom values are present, unknown00 is set to 0, and all padding bytes are zero'd out.
+struct ClientZoneEntry_Struct
+{
+	/*0000*/	unsigned int	unknown00;      // Hash of first 32 bytes (zero if packet contains custom fields)
+	/*0004*/	char	char_name[59];			// Character Name / Padding
+	/*0063*/	char    buffstacking_support;   // [custom] The client support flag for the buffstacking modifications
+	/*0064*/	char	song_window_slots;      // [custom] Number of song window slots the client can support
+	/*0065*/	char	shared_bank;            // [custom] Number of shared bank slots the client can support
+	/*0066*/	char	dll_version[2];         // [custom] Dll Version (uint16)
+	/*0068*/
+};
+
 struct RaceData
 {
 	std::string actor_tag = "";
 	std::string animation_fallback_tag = "";
+};
+
+struct BuffStackingInfo_Struct
+{
+	unsigned char buffstacking; // 0 = Legacy Stacking, 1 = New Buffstacking (V1)
+	unsigned char song_window_slots;
+	unsigned char standard_buff_slots; // Not used/supported. Just a placeholder if we ever support this
+};
+
+struct SharedBankInfo_Struct
+{
+	unsigned char mode;
+	unsigned char bag_count; // Number of bag slots the client can deposit to
 };
 
 // Custom Race Support
@@ -64,7 +91,10 @@ constexpr unsigned int SpawnAppearanceType_ClientDllMessage = 256;
 void SendCustomSpawnAppearanceMessage(unsigned __int16 feature_id, unsigned __int16 feature_value, bool is_request);
 
 // Song Window Support
+void Handle_OP_BuffStackingInfo(BuffStackingInfo_Struct* bsi);
 __declspec(dllexport) class CShortBuffWindow* GetShortDurationBuffWindow();
+struct _EQBUFFINFO* GetStartBuffArray(bool songs_buffs);
+void MakeGetBuffReturnSongs(bool enabled);
 
 // Tint Support
 bool Handle_In_OP_WearChange(WearChange_Struct* wc);
@@ -73,8 +103,8 @@ bool Handle_Out_OP_WearChange(WearChange_Struct* wc);
 // Horse Support
 unsigned short GetActualHorseRaceID(struct _EQSPAWNINFO* entity);
 
-struct _EQBUFFINFO* GetStartBuffArray(bool songs_buffs);
-void MakeGetBuffReturnSongs(bool enabled);
+// Bank Support
+void Handle_OP_SharedBankInfo(SharedBankInfo_Struct* sbi);
 
 /*
 voidpf eqemu_alloc_func(voidpf opaque, uInt items, uInt size);
