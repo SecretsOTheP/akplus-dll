@@ -3172,6 +3172,29 @@ int __fastcall EQMACMQ_DETOUR_CEverQuest__InterpretCmd(void* this_ptr, void* not
 		return 0;
 	}
 
+	if (strncmp(a2, "/invite", 7) == 0) {
+		if (strlen(a2) >= 9 && a2[7] == ' ' && isalpha(a2[8])) {
+			char* name = &a2[8];
+			size_t name_len = strlen(name);
+			if (name_len > 0 && name_len < 64)
+			{
+				name[0] = toupper(name[0]);
+				for (int i = 0; i < name_len; i++)
+				{
+					if (!isalpha(name[i]))
+						return 0;
+				}
+				char GroupInvite[193];
+				strcpy(&GroupInvite[0], name); // invitee
+				strcpy(&GroupInvite[64], EQ_OBJECT_CharInfo->Name); // inviter
+				GroupInvite[128] = 0;
+				GroupInvite[128 + 64] = EQ_OBJECT_CharInfo->SpawnInfo->IsPlayerKill;
+				Connection::SendMessage_(0x203e, GroupInvite, sizeof(GroupInvite), 1);
+				return 0;
+			}
+		}
+	}
+
 	else if ((strcmp(a2, "/raiddump") == 0) || (strcmp(a2, "/outputfile raid") == 0)) {
 		// beginning of raid structure
 		DWORD raid_ptr = 0x007914D0;
