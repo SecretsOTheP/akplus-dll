@@ -2417,6 +2417,45 @@ void ApplyMesmerizationFixes()
 // Mesmerization Fix [end]
 // --------------------------------------------------------------------------
 
+// --------------------------------------------------------------------------
+// Tradeskill Support
+// --------------------------------------------------------------------------
+
+#define CContainerWnd_HandleCombine_Addr 0x416e5b
+
+typedef void(__thiscall* EQ_FUNCTION_TYPE_CContainerWnd_HandleCombine)(int this_ptr);
+EQ_FUNCTION_TYPE_CContainerWnd_HandleCombine CContainerWnd_HandleCombine_Trampoline;
+void __fastcall CContainerWnd_HandleCombine_Detour(int this_ptr, int u)
+{
+	auto* char_info = EQ_OBJECT_CharInfo;
+
+	if (char_info && char_info->Class == EQ_CLASS_SHADOWKNIGHT)
+	{
+		// shadowknight, allow necro research
+		PatchT(0x416EAC + 6, (BYTE)0x05);
+		CContainerWnd_HandleCombine_Trampoline(this_ptr);
+		PatchT(0x416EAC + 6, (BYTE)0x0B);
+	}
+	else
+	{
+		CContainerWnd_HandleCombine_Trampoline(this_ptr);
+	}
+}
+
+#define InitializeSkillData_Addr 0x4D0E88
+
+typedef BYTE*(__thiscall* EQ_FUNCTION_TYPE_InitializeSkillData)(BYTE* this_ptr, __int16 skill_id);
+EQ_FUNCTION_TYPE_InitializeSkillData InitializeSkillData_Trampoline;
+BYTE* __fastcall InitializeSkillData_Detour(BYTE* this_ptr, int u, __int16 skill_id)
+{
+	BYTE* ret = InitializeSkillData_Trampoline(this_ptr, skill_id);
+	if (skill_id == 58) // Research
+	{
+		ret[0xC + EQ_CLASS_SHADOWKNIGHT] = 16; // this->Classes[SHADOWKNIGHT] = 16
+	}
+	return ret;
+}
+
 #define EQZoneInfo_AddZoneInfo 0x00523AEB
 #define EQZoneInfo_AddZoneInfo 0x00523AEB
 
@@ -5621,6 +5660,10 @@ void InitHooks()
 
 	// Mesmerization Stun Duration fix
 	ApplyMesmerizationFixes();
+
+	// Tradeskill Adjustments
+	CContainerWnd_HandleCombine_Trampoline = (EQ_FUNCTION_TYPE_CContainerWnd_HandleCombine)DetourFunction((PBYTE)CContainerWnd_HandleCombine_Addr, (PBYTE)CContainerWnd_HandleCombine_Detour);
+	InitializeSkillData_Trampoline = (EQ_FUNCTION_TYPE_InitializeSkillData)DetourFunction((PBYTE)InitializeSkillData_Addr, (PBYTE)InitializeSkillData_Detour);
 
 	return_ProcessMouseEvent = (ProcessGameEvents_t)DetourFunction((PBYTE)o_MouseEvents, (PBYTE)ProcessMouseEvent_Hook);
 	//return_SetMouseCenter = (ProcessGameEvents_t)DetourFunction((PBYTE)o_MouseCenter, (PBYTE)SetMouseCenter_Hook);
