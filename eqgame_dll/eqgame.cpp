@@ -453,14 +453,14 @@ void HandleCustomSpawnAppearanceMessage(SpawnAppearance_Struct* message)
 	}
 }
 // Hook to delegate to HandleCustomSpawnAppearanceMessage
-typedef int(__thiscall* EQ_FUNCTION_TYPE_HandleSpawnAppearanceMessage)(void* this_ptr, int unk2, int opcode, SpawnAppearance_Struct* sa);
+typedef int(__cdecl* EQ_FUNCTION_TYPE_HandleSpawnAppearanceMessage)(void* connection, int opcode, SpawnAppearance_Struct* sa, int len);
 EQ_FUNCTION_TYPE_HandleSpawnAppearanceMessage HandleSpawnAppearanceMessage_Trampoline;
-int __fastcall HandleSpawnAppearanceMessage_Detour(void* this_ptr, int unused_edx, int unk2, int opcode, SpawnAppearance_Struct* sa) {
+int __cdecl HandleSpawnAppearanceMessage_Detour(void* connection, int opcode, SpawnAppearance_Struct* sa, int len) {
 	if (sa->type >= SpawnAppearanceType_ClientDllMessage) {
 		HandleCustomSpawnAppearanceMessage(sa);
 		return 1;
 	}
-	return HandleSpawnAppearanceMessage_Trampoline(this_ptr, unk2, opcode, sa);
+	return HandleSpawnAppearanceMessage_Trampoline(connection, opcode, sa, len);
 }
 
 typedef bool(__cdecl* EQ_FUNCTION_TYPE_GetLabelFromEQ)(int, PEQCXSTR*, bool*, DWORD*);
