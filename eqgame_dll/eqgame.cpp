@@ -3933,15 +3933,16 @@ constexpr WORD kMaterialChain = 2;
 constexpr WORD kMaterialPlate = 3;
 constexpr WORD kMaterialVeliousHelm = 240;
 constexpr WORD kMaterialVeliousHelmAlternate = 241; // A couple races support alternate helms
+constexpr int kUnknownMaterial = 0xFFFF; // Default value of pc_helmtexture on server is no wear change has ever been seen
 
 // We install 'Bald' variation of heads with ID 05: "{racetag}HE05_DMSPRITEDEF". We swap to this head only when wearing a Velious Helm, to ensure hair clipping is fixed.
 constexpr WORD kMaterialBaldHead = 5;
-constexpr char kHumanFemaleBaldHead[] = "HUFHE05_DMSPRITEDEF"; // todo
-constexpr char kBarbarianFemaleBaldHead[] = "BAFHE05_DMSPRITEDEF"; // todo
-constexpr char kEruditeFemaleBaldHead[] = "ERFHE05_DMSPRITEDEF"; // todo
-constexpr char kEruditeMaleBaldHead[] = "ERMHE05_DMSPRITEDEF"; // done
-constexpr char kWoodElfFemaleBaldHead[] = "ELFHE05_DMSPRITEDEF"; // todo
-constexpr char kDarkElfFemaleBaldHead[] = "DAFHE05_DMSPRITEDEF"; // todo
+constexpr char kHumanFemaleBaldHead[] = "HUFHE05_DMSPRITEDEF";
+constexpr char kBarbarianFemaleBaldHead[] = "BAFHE05_DMSPRITEDEF";
+constexpr char kEruditeFemaleBaldHead[] = "ERFHE05_DMSPRITEDEF";
+constexpr char kEruditeMaleBaldHead[] = "ERMHE05_DMSPRITEDEF";
+constexpr char kWoodElfFemaleBaldHead[] = "ELFHE05_DMSPRITEDEF";
+constexpr char kDarkElfFemaleBaldHead[] = "DAFHE05_DMSPRITEDEF";
 
 constexpr DWORD kColorNone = 0;
 constexpr DWORD kColorDefault = 0x00FFFFFF;
@@ -4176,7 +4177,7 @@ int __fastcall SwapHead_Detour(int* cDisplay, int unused_edx, EQSPAWNINFO* entit
 		old_material_or_head = EQPlayer::GetHeadID(entity, old_material_or_head);
 
 		// (2a) Fix broken Velious races by using a special head with no hair/hood graphics underneath their helmet. This stops their hair/hood clipping through the helm.
-		use_bald_head = new_material >= kMaterialVeliousHelm && IsHelmPatchedOldModel(entity);
+		use_bald_head = new_material >= kMaterialVeliousHelm && new_material != kUnknownMaterial && IsHelmPatchedOldModel(entity);
 		if (use_bald_head)
 		{
 			PatchSwap(0x4A1C65 + 1, BYTE_BALD_HEAD, 1); // Changes default head 0 -> 5
