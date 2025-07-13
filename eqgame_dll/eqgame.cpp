@@ -4344,14 +4344,7 @@ int __fastcall SwapModel_Detour(int* cDisplay, int unused, EQSPAWNINFO* entity, 
 		EQDAGINFO* dag = EQPlayer::GetDag(entity, wear_slot);
 		if (dag)
 		{
-			if (is_weapon_slot)
-				SetDagSpriteTintByMask(dag, tint);
-			else
 				CDisplay::SetDagSpriteTint(dag, tint);
-		}
-		if (wear_slot == kMaterialSlotSecondary && entity->ActorInfo && entity->ActorInfo->DagShieldPoint) // Also tint shields
-		{
-			SetDagSpriteTintByMask(entity->ActorInfo->DagShieldPoint, tint);
 		}
 	}
 
@@ -4371,7 +4364,7 @@ bool Handle_In_OP_WearChange(WearChange_Struct* wc)
 	// Weapon color is not passed from OP_WearChange to any called method, so we have to save it from here.
 	if (wc->wear_slot_id == kMaterialSlotPrimary || wc->wear_slot_id == kMaterialSlotSecondary)
 	{
-		EQPlayer::SaveMaterialColor(entity, wc->wear_slot_id, wc->color);
+		//EQPlayer::SaveMaterialColor(entity, wc->wear_slot_id, wc->color);
 	}
 	return false;
 }
@@ -4397,18 +4390,10 @@ bool Handle_Out_OP_WearChange(WearChange_Struct* wc)
 			wc->color = self->EquipmentMaterialColor[kMaterialSlotHead];
 		}
 	}
-	else if (wc->wear_slot_id == kMaterialSlotPrimary || wc->wear_slot_id == kMaterialSlotSecondary)
-	{
-		// Fixes outbound weapons to include the current tint
-		if (wc->material > 0)
-			wc->color = self->EquipmentMaterialColor[wc->wear_slot_id];
-		else
-			wc->color = 0;
-	}
 	return false; // Continue processing this OP_WearChange, sending the message.
 }
 
-void ApplyTintPatches()
+void ApplyTintAndHelmPatches()
 {
 	// GetVeliousHelmMaterialIT_4A1512(entity, material, *show_hair)
 	// - (1) Disables hair becoming invisible on the shared default head. Prevents "show_hair = false" happening with Velious helms.
@@ -4421,9 +4406,11 @@ void ApplyTintPatches()
 	// ChangeDag()
 	// - Unlocks proper tinting for IT# model helms/weapons below IT# number 1000:
 	// - IT# models under ID 1000 used shared memory in their tint storage, so setting the tint on one model affected all models in the zone.
-	DWORD value1 = 1;
-	PatchA((void*)(0x4B094E + 3), (const void*)&value1, sizeof(DWORD));
-	PatchA((void*)(0x4B099E + 3), (const void*)&value1, sizeof(DWORD));
+	
+	//Disabled per request
+	//DWORD value1 = 1;
+	//PatchA((void*)(0x4B094E + 3), (const void*)&value1, sizeof(DWORD));
+	//PatchA((void*)(0x4B099E + 3), (const void*)&value1, sizeof(DWORD));
 	
 }
 
@@ -5618,7 +5605,7 @@ void InitHooks()
 	SwapHead_Trampoline = (EQ_FUNCTION_TYPE_SwapHead)DetourFunction((PBYTE)0x4A1735, (PBYTE)SwapHead_Detour);
 	SwapModel_Trampoline = (EQ_FUNCTION_TYPE_SwapModel)DetourFunction((PBYTE)0x4A9EB3, (PBYTE)SwapModel_Detour);
 	WearChangeArmor_Trampoline = (EQ_FUNCTION_TYPE_WearChangeArmor)DetourFunction((PBYTE)0x4A2A7A, (PBYTE)WearChangeArmor_Detour);
-	ApplyTintPatches();
+	ApplyTintAndHelmPatches();
 
 	// Mesmerization Stun Duration fix
 	ApplyMesmerizationFixes();
