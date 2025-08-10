@@ -2417,6 +2417,35 @@ void ApplyMesmerizationFixes()
 // Mesmerization Fix [end]
 // --------------------------------------------------------------------------
 
+// --------------------------------------------------------------------------
+// Jam Fest stat desync fix
+// --------------------------------------------------------------------------
+
+typedef void(__thiscall* EQ_FUNCTION_TYPE_EQ_Character__HitBySpell)(EQCHARINFO* this_ptr, Action_Struct* action);
+EQ_FUNCTION_TYPE_EQ_Character__HitBySpell EQ_Character__HitBySpell_Trampoline;
+void __fastcall EQ_Character__HitBySpell_Detour(EQCHARINFO* this_ptr, int u, Action_Struct* action)
+{
+	// Applies caster level modifier from packet
+	if (action && action->type == 0xE7 && action->buff_unknown == 4 && action->level > 0 && action->level <= 255
+		&& action->spell < 4000 && (action->spell < 1252 || action->spell > 1266))
+	{
+		EQSPAWNINFO* caster = EQPlayer::GetSpawn(action->source);
+		if (caster && caster->Type == 0 && caster->Class == EQ_CLASS_BARD && action->level > caster->Level)
+		{
+			BYTE tmp_level = caster->Level;
+			caster->Level = action->level;
+			EQ_Character__HitBySpell_Trampoline(this_ptr, action);
+			caster->Level = tmp_level;
+			return;
+		}
+	}
+	EQ_Character__HitBySpell_Trampoline(this_ptr, action);
+}
+
+// --------------------------------------------------------------------------
+// Jam Fest stat desync fix [end]
+// --------------------------------------------------------------------------
+
 #define EQZoneInfo_AddZoneInfo 0x00523AEB
 #define EQZoneInfo_AddZoneInfo 0x00523AEB
 
@@ -5609,6 +5638,9 @@ void InitHooks()
 
 	// Mesmerization Stun Duration fix
 	ApplyMesmerizationFixes();
+
+	// Fix Jam Fest stats desync
+	EQ_Character__HitBySpell_Trampoline = (EQ_FUNCTION_TYPE_EQ_Character__HitBySpell)DetourFunction((PBYTE)0x4C8492, (PBYTE)EQ_Character__HitBySpell_Detour);
 
 	return_ProcessMouseEvent = (ProcessGameEvents_t)DetourFunction((PBYTE)o_MouseEvents, (PBYTE)ProcessMouseEvent_Hook);
 	//return_SetMouseCenter = (ProcessGameEvents_t)DetourFunction((PBYTE)o_MouseCenter, (PBYTE)SetMouseCenter_Hook);
