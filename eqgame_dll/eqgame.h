@@ -49,6 +49,26 @@ struct Illusion_Struct
 	int size;
 };
 
+struct Action_Struct
+{
+	/*00*/	unsigned short target;				// Target entity ID
+	/*02*/	unsigned short	source;				// Caster entity ID
+	/*04*/	unsigned short	level;				// this only does something for spell ids 1252-1266 (potions) and only accepts values 1-60, otherwise the action uses source entity level
+	/*06*/	unsigned short	target_level;		// unused by client
+	/*08*/	int	instrument_mod;		// normally 10, used for bard songs
+	/*12*/	float	force;				// push force
+	/*16*/	float	sequence;			// push heading
+	/*20*/	float	pushup_angle;		// push pitch
+	/*24*/	unsigned char type;				// 231 for spells
+	/*25*/	unsigned char	unknown25;			// unused by client
+	/*26*/	unsigned short	spell_id_unused;	// extra spell_id, not used by client
+	/*28*/	short	tap_amount;			// used in client for instant, targettype 13 (tap) spells to set the amount that was tapped
+	/*30*/	unsigned short	spell;				// spell_id
+	/*32*/	unsigned char	unknown32;			// 0x00
+	/*33*/  unsigned char	buff_unknown;		// 1 to start then 4 for success
+	/*34*/	unsigned short	unknown34;			// unused by client
+};
+
 struct RaceData
 {
 	std::string actor_tag = "";
