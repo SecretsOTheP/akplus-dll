@@ -5641,6 +5641,7 @@ void InitHooks()
 
 	// Fix Jam Fest stats desync
 	EQ_Character__HitBySpell_Trampoline = (EQ_FUNCTION_TYPE_EQ_Character__HitBySpell)DetourFunction((PBYTE)0x4C8492, (PBYTE)EQ_Character__HitBySpell_Detour);
+	PatchNopByRange(0x004C65F4, 0x004C65F7); // Fixes Bards double-adding Jam Fest modifier on self (trust server to send correct caster level)
 
 	return_ProcessMouseEvent = (ProcessGameEvents_t)DetourFunction((PBYTE)o_MouseEvents, (PBYTE)ProcessMouseEvent_Hook);
 	//return_SetMouseCenter = (ProcessGameEvents_t)DetourFunction((PBYTE)o_MouseCenter, (PBYTE)SetMouseCenter_Hook);
