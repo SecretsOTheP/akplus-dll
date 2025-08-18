@@ -2450,6 +2450,8 @@ void __fastcall EQ_Character__HitBySpell_Detour(EQCHARINFO* this_ptr, int u, Act
 // /bazaar Crash Fix when above 500 players
 // --------------------------------------------------------------------------
 
+bool IsTraderListCapped = false;
+
 int GetNumTraders()
 {
 	EQSPAWNINFO* spawn = EQ_OBJECT_FirstSpawn;
@@ -2472,11 +2474,18 @@ int __fastcall CBazaarSearchWnd_UpdatePlayerCombo_Detour(DWORD* this_ptr, int u)
 {
 	if (GetNumTraders() > 500)
 	{
-		// Over Cap - Skip the unbounded player loop that gathers player names
-		PatchT(0x4055AC, (BYTE)0xEB); // Unconditional Jump - Skip over the buggy trader loop as if the zone was empty
-		int ret = CBazaarSearchWnd_UpdatePlayerCombo_Trampoline(this_ptr);
+		if (!IsTraderListCapped)
+		{
+			PatchT(0x40609A, (BYTE)0); // Allows 'Find' button to be enabled even if traders list is empty
+			PatchT(0x4055AC, (BYTE)0xEB); // Unconditional Jump - Skip over the buggy trader loop as if the zone was empty
+			IsTraderListCapped = true;
+		}
+	}
+	else if (IsTraderListCapped)
+	{
+		PatchT(0x40609A, (BYTE)1); // Resorces 'Find' button to be disabled unless at least 1 trader in the zone.
 		PatchT(0x4055AC, (BYTE)0x74); // Restore code to normal (jz)
-		return ret;
+		IsTraderListCapped = false;
 	}
 	return CBazaarSearchWnd_UpdatePlayerCombo_Trampoline(this_ptr);
 }
