@@ -2483,7 +2483,7 @@ int __fastcall CBazaarSearchWnd_UpdatePlayerCombo_Detour(DWORD* this_ptr, int u)
 
 void FixBazaarCrash()
 {
-	// Hook the player dropdown to be empty if above 1000 traders.
+	// Hook the player dropdown to be empty if above maximum traders.
 	CBazaarSearchWnd_UpdatePlayerCombo_Trampoline = (EQ_FUNCTION_TYPE_CBazaarSearchWnd_UpdatePlayerCombo)DetourFunction((PBYTE)0x40557D, (PBYTE)CBazaarSearchWnd_UpdatePlayerCombo_Detour);
 }
 
