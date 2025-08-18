@@ -2446,6 +2446,60 @@ void __fastcall EQ_Character__HitBySpell_Detour(EQCHARINFO* this_ptr, int u, Act
 // Jam Fest stat desync fix [end]
 // --------------------------------------------------------------------------
 
+// --------------------------------------------------------------------------
+// /bazaar Crash Fix when above 500 players
+// --------------------------------------------------------------------------
+
+bool IsTraderListCapped = false;
+
+int GetNumTraders()
+{
+	EQSPAWNINFO* spawn = EQ_OBJECT_FirstSpawn;
+	int count = 0;
+	if (spawn)
+	{
+		do
+		{
+			if (spawn->ActorInfo && spawn->ActorInfo->IsTrader)
+				count++;
+			spawn = spawn->Next;
+		} while (spawn);
+	}
+	return count;
+}
+
+typedef int(__thiscall* EQ_FUNCTION_TYPE_CBazaarSearchWnd_UpdatePlayerCombo)(DWORD* this_ptr);
+EQ_FUNCTION_TYPE_CBazaarSearchWnd_UpdatePlayerCombo CBazaarSearchWnd_UpdatePlayerCombo_Trampoline;
+int __fastcall CBazaarSearchWnd_UpdatePlayerCombo_Detour(DWORD* this_ptr, int u)
+{
+	if (GetNumTraders() > 500)
+	{
+		if (!IsTraderListCapped)
+		{
+			PatchT(0x40609A, (BYTE)0); // Allows 'Find' button to be enabled even if traders list is empty
+			PatchT(0x4055AC, (BYTE)0xEB); // Unconditional Jump - Skip over the buggy trader loop as if the zone was empty
+			IsTraderListCapped = true;
+		}
+	}
+	else if (IsTraderListCapped)
+	{
+		PatchT(0x40609A, (BYTE)1); // Resorces 'Find' button to be disabled unless at least 1 trader in the zone.
+		PatchT(0x4055AC, (BYTE)0x74); // Restore code to normal (jz)
+		IsTraderListCapped = false;
+	}
+	return CBazaarSearchWnd_UpdatePlayerCombo_Trampoline(this_ptr);
+}
+
+void FixBazaarCrash()
+{
+	// Hook the player dropdown to be empty if above maximum traders.
+	CBazaarSearchWnd_UpdatePlayerCombo_Trampoline = (EQ_FUNCTION_TYPE_CBazaarSearchWnd_UpdatePlayerCombo)DetourFunction((PBYTE)0x40557D, (PBYTE)CBazaarSearchWnd_UpdatePlayerCombo_Detour);
+}
+
+// --------------------------------------------------------------------------
+// Bazaar Crash Fix [end]
+// --------------------------------------------------------------------------
+
 #define EQZoneInfo_AddZoneInfo 0x00523AEB
 #define EQZoneInfo_AddZoneInfo 0x00523AEB
 
@@ -5642,6 +5696,8 @@ void InitHooks()
 	// Fix Jam Fest stats desync
 	EQ_Character__HitBySpell_Trampoline = (EQ_FUNCTION_TYPE_EQ_Character__HitBySpell)DetourFunction((PBYTE)0x4C8492, (PBYTE)EQ_Character__HitBySpell_Detour);
 	PatchNopByRange(0x004C65F4, 0x004C65F7); // Fixes Bards double-adding Jam Fest modifier on self (trust server to send correct caster level)
+
+	FixBazaarCrash();
 
 	return_ProcessMouseEvent = (ProcessGameEvents_t)DetourFunction((PBYTE)o_MouseEvents, (PBYTE)ProcessMouseEvent_Hook);
 	//return_SetMouseCenter = (ProcessGameEvents_t)DetourFunction((PBYTE)o_MouseCenter, (PBYTE)SetMouseCenter_Hook);
