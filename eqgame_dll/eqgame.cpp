@@ -2468,6 +2468,16 @@ void FixBazaarCrash()
 // Bazaar Crash Fix [end]
 // --------------------------------------------------------------------------
 
+// * level_range - Players must be +/- this level range to pvp (default: 4)
+// * pvp_min_level - Players below this level cannot pvp (default: 6)
+void SetPvpLevelRange(BYTE level_range, BYTE pvp_min_level)
+{
+	PatchT(0x509CB2, (BYTE)level_range);
+	PatchT(0x509E03, (BYTE)level_range);
+	PatchT(0x509CBC, (BYTE)pvp_min_level);
+	PatchT(0x509CC6, (BYTE)pvp_min_level);
+}
+
 #define EQZoneInfo_AddZoneInfo 0x00523AEB
 #define EQZoneInfo_AddZoneInfo 0x00523AEB
 
@@ -5647,6 +5657,8 @@ void InitHooks()
 	PatchNopByRange(0x004C65F4, 0x004C65F7); // Fixes Bards double-adding Jam Fest modifier on self (trust server to send correct caster level)
 
 	FixBazaarCrash();
+
+	SetPvpLevelRange(100, 0);
 
 	return_ProcessMouseEvent = (ProcessGameEvents_t)DetourFunction((PBYTE)o_MouseEvents, (PBYTE)ProcessMouseEvent_Hook);
 	//return_SetMouseCenter = (ProcessGameEvents_t)DetourFunction((PBYTE)o_MouseCenter, (PBYTE)SetMouseCenter_Hook);
