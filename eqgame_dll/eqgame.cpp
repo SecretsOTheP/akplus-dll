@@ -2187,7 +2187,7 @@ void __fastcall EQPlayer__MountEQPlayer_Detour(EQSPAWNINFO* this_ptr, int unused
 	cdisplay[0xA0] = display_0xA0;
 }
 
-// 1. Mounted Interia Fix
+// 1. Mounted Inertia Fix
 static void __fastcall EQPlayer_SetAccel_Detour(EQSPAWNINFO* this_entity, int unused_edx, float target_speed, int ignore_rider_flag) {
 	if (this_entity->MovementSpeed == target_speed) return;
 
@@ -2292,7 +2292,7 @@ void ApplyHorseQolPatches()
 	HasInvalidRiderTexture_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__HasInvalidRiderTexture)DetourFunction((PBYTE)0x0051FCA6, (PBYTE)HasInvalidRiderTexture_Detour);
 	EQPlayer__MountEQPlayer_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__MountEQPlayer)DetourFunction((PBYTE)0x51FD83, (PBYTE)EQPlayer__MountEQPlayer_Detour);
 
-	// 1. Interia
+	// 1. Inertia
 	DetourFunction((PBYTE)0x520074, (PBYTE)EQPlayer_SetAccel_Detour);
 	// 2. Duck
 	ExecuteCmd_Trampoline = (EQ_FUNCTION_TYPE_ExecuteCmd)DetourFunction((PBYTE)0x54050C, (PBYTE)ExecuteCmd_Detour);
