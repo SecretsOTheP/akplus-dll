@@ -23,7 +23,7 @@
 // Increment if we make significant changes that we want to track.
 // Server uses Quarm:WarnDllVersionBelow to warn clients below a specific threshold.
 #ifndef DLL_VERSION
-#define DLL_VERSION 1
+#define DLL_VERSION 5
 #endif
 #define DLL_VERSION_MESSAGE_ID 4 // Matches ClientFeature::CodeVersion == 4 on the Server, do not change.
 
