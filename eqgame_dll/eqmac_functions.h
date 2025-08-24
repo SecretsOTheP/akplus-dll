@@ -183,6 +183,12 @@ public:
 	static int* t3dGetPointerFromDictionary(const char* key) {
 		return reinterpret_cast<int* (__cdecl*)(int, const char*)>(*(int*)0x7F9A24)(GetDisplay()[1], key);
 	}
+	static int t3dSetActorBoundingRadius(EQACTORINSTANCEINFO* actorinstance, float a1, DWORD a2) {
+		return reinterpret_cast<int (__cdecl*)(EQACTORINSTANCEINFO*, float, DWORD)>(*(int*)0x7F9AB8)(actorinstance, a1, a2);
+	}
+	static int t3dUpdateTouchedRegions(EQACTORINSTANCEINFO* actorinstance, DWORD regionNumber) {
+		return reinterpret_cast<int(__cdecl*)(int, EQACTORINSTANCEINFO*, DWORD)>(*(int*)0x7F9BCC)(GetDisplay()[1], actorinstance, regionNumber);
+	}
 	static int* t3dGetDagSprite(EQDAGINFO* dag) {
 		return reinterpret_cast<int*(__cdecl*)(EQDAGINFO*)>(*(int*)0x7F99FC)(dag);
 	}

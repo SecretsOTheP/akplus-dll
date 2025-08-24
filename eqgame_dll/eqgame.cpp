@@ -2162,8 +2162,6 @@ int __fastcall LegalPlayerRace_Detour(EQSPAWNINFO* this_ptr, void* not_used, int
 // Horse QOL Support
 // --------------------------------------------------------------------------
 
-// If horses or elementals are disabled, it uses the AK-era logic of hiding the horse but keeping the buff
-bool UseLuclinElementals = true;
 BYTE UseLuclinHorses = 1;
 
 typedef int(__thiscall* EQ_FUNCTION_TYPE_EQPlayer__HasInvalidRiderTexture)(void* this_ptr);
@@ -2173,6 +2171,7 @@ int __fastcall HasInvalidRiderTexture_Detour(EQSPAWNINFO* this_ptr, void* not_us
 	return UseLuclinHorses ? 0 : 1;
 }
 
+// Allows UseLuclinElementals=FALSE or UseLuclinHorses=FALSE ini option to work for disabling horses
 typedef void(__thiscall* EQ_FUNCTION_TYPE_EQPlayer__MountEQPlayer)(EQSPAWNINFO* this_ptr, EQSPAWNINFO* mount);
 EQ_FUNCTION_TYPE_EQPlayer__MountEQPlayer EQPlayer__MountEQPlayer_Trampoline;
 void __fastcall EQPlayer__MountEQPlayer_Detour(EQSPAWNINFO* this_ptr, int unused, EQSPAWNINFO* horse)
@@ -2184,7 +2183,7 @@ void __fastcall EQPlayer__MountEQPlayer_Detour(EQSPAWNINFO* this_ptr, int unused
 	cdisplay[0xA0] = display_0xA0;
 }
 
-// 1. Mounted Inertia Fix
+// Mounted Inertia Fix
 static void __fastcall EQPlayer_SetAccel_Detour(EQSPAWNINFO* this_entity, int unused_edx, float target_speed, int ignore_rider_flag) {
 	if (this_entity->MovementSpeed == target_speed) return;
 
@@ -2210,7 +2209,7 @@ static void __fastcall EQPlayer_SetAccel_Detour(EQSPAWNINFO* this_entity, int un
 	this_entity->MovementSpeed = max(min_speed, min(target_speed, accel_speed));
 }
 
-// 2. Mounted Ducking fix
+// Mounted Ducking fix
 typedef int(__cdecl* EQ_FUNCTION_TYPE_ExecuteCmd)(UINT cmd, bool isdown, int unk2);
 EQ_FUNCTION_TYPE_ExecuteCmd ExecuteCmd_Trampoline;
 int __cdecl ExecuteCmd_Detour(UINT cmd, bool isdown, int unk2)
@@ -2228,7 +2227,7 @@ int __cdecl ExecuteCmd_Detour(UINT cmd, bool isdown, int unk2)
 	return ExecuteCmd_Trampoline(cmd, isdown, unk2);
 }
 
-// 3. Mounted Z - coordinate fix while levitating
+// Mounted Z - coordinate fix while levitating
 typedef __int64(_cdecl* EQ_FUNCTION_TYPE_PackPhysics)(int playerPositionPtr, void* packedDataBuffer);
 EQ_FUNCTION_TYPE_PackPhysics PackPhysics_Trampoline;
 __int64 _cdecl PackPhysics_Detour(int playerPositionPtr, void* packedDataBuffer) {
@@ -2248,7 +2247,7 @@ __int64 _cdecl PackPhysics_Detour(int playerPositionPtr, void* packedDataBuffer)
 	return PackPhysics_Trampoline(playerPositionPtr, packedDataBuffer);
 }
 
-// 4.Mounted Z - axis Downward Control
+// Mounted Z - axis Downward Control
 typedef void(*EQ_FUNCTION_TYPE_MainLoop)();
 EQ_FUNCTION_TYPE_MainLoop MainLoop_Trampoline;
 void MainLoop_Detour() {
@@ -2279,23 +2278,54 @@ void MainLoop_Detour() {
 	}
 }
 
-void ApplyHorseQolPatches()
+// Remove collision caused by invisible riderless horses
+typedef int(__cdecl* _t3dSetActorInvisible)(EQACTORINSTANCEINFO* view_actor, DWORD invisible);
+_t3dSetActorInvisible t3dSetActorInvisible_Trampoline;
+int __cdecl t3dSetActorInvisible_Detour(EQACTORINSTANCEINFO* view_actor, DWORD invisible)
 {
-	UseLuclinElementals = GetEQClientIniFlag_55B947("Defaults", "UseLuclinElementals", "TRUE");
+	int ret = t3dSetActorInvisible_Trampoline(view_actor, invisible);
+	if (UseLuclinHorses == 0 && invisible == 1 && view_actor && view_actor->Type == 24 && view_actor->BoundingRadius > 0.0f && view_actor->ScaleFactor > 0 && view_actor->ActorDefinition && view_actor->ActorDefinition->Tag)
+	{
+		if (!strnicmp(view_actor->ActorDefinition->Tag, "HUM_ACTORDEF", 12) ||
+			!strnicmp(view_actor->ActorDefinition->Tag, "HSM_ACTORDEF", 12) ||
+			!strnicmp(view_actor->ActorDefinition->Tag, "HSF_ACTORDEF", 12) ||
+			!strnicmp(view_actor->ActorDefinition->Tag, "HSN_ACTORDEF", 12))
+		{
+			if (view_actor->UserData && view_actor->UserData->Race == 216)
+			{
+				view_actor->BoundingRadius = 0;
+				view_actor->ScaleFactor = 0;
+				Graphics::t3dUpdateTouchedRegions(view_actor, view_actor->RegionNumber);
+			}
+		}
+	}
+	return ret;
+}
+
+void ApplyHorseQolPatches(HINSTANCE heqGfxMod)
+{
+	bool UseLuclinElementals = GetEQClientIniFlag_55B947("Defaults", "UseLuclinElementals", "TRUE");
 	UseLuclinHorses = UseLuclinElementals && GetEQClientIniFlag_55B947("Defaults", "UseLuclinHorses", "TRUE");
 	HasInvalidRiderTexture_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__HasInvalidRiderTexture)DetourFunction((PBYTE)0x0051FCA6, (PBYTE)HasInvalidRiderTexture_Detour);
 	EQPlayer__MountEQPlayer_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__MountEQPlayer)DetourFunction((PBYTE)0x51FD83, (PBYTE)EQPlayer__MountEQPlayer_Detour);
 
-	// 1. Inertia
+	// Inertia
 	DetourFunction((PBYTE)0x520074, (PBYTE)EQPlayer_SetAccel_Detour);
-	// 2. Duck
+	// Duck
 	ExecuteCmd_Trampoline = (EQ_FUNCTION_TYPE_ExecuteCmd)DetourFunction((PBYTE)0x54050C, (PBYTE)ExecuteCmd_Detour);
-	// 3. Accurate Z-coord
+	// Accurate Z-coord
 	PackPhysics_Trampoline = (EQ_FUNCTION_TYPE_PackPhysics)DetourFunction((PBYTE)0x4F224E, (PBYTE)PackPhysics_Detour);
-	// 4. Downward Pitch Control
+	// Downward Pitch Control
 	MainLoop_Trampoline = (EQ_FUNCTION_TYPE_MainLoop)DetourFunction((PBYTE)0x5473c3, (PBYTE)MainLoop_Detour);
-	// 5. Fix 'super speed' when in water
+	// Prevent 'super speed' when in water
 	PatchT(0x0050BB31, (BYTE)0xB);
+	// Remove collision caused by invisible riderless horses
+	if (heqGfxMod)
+	{
+		_t3dSetActorInvisible t3dSetActorInvisible = (_t3dSetActorInvisible)GetProcAddress(heqGfxMod, "t3dSetActorInvisible");
+		if (t3dSetActorInvisible)
+			t3dSetActorInvisible_Trampoline = (_t3dSetActorInvisible)DetourFunction((PBYTE)t3dSetActorInvisible, (PBYTE)t3dSetActorInvisible_Detour);
+	}
 }
 
 // --------------------------------------------------------------------------
@@ -5453,9 +5483,10 @@ void InitHooks()
 	PatchA((DWORD*)0x005595A7, &test3, sizeof(test3));
 
 	HMODULE eqgfx_dll = LoadLibraryA("eqgfx_dx8.dll");
+	HINSTANCE heqGfxMod = nullptr;
 	if (eqgfx_dll)
 	{
-		HINSTANCE heqGfxMod = GetModuleHandle("eqgfx_dx8.dll");
+		heqGfxMod = GetModuleHandle("eqgfx_dx8.dll");
 		if (heqGfxMod)
 		{
 			_s3dSetStringSpriteYonClip s3dSetStringSpriteYonClip = (_s3dSetStringSpriteYonClip)GetProcAddress(heqGfxMod, "s3dSetStringSpriteYonClip");
@@ -5562,7 +5593,7 @@ void InitHooks()
 	CDisplay__InitWorld_Trampoline = (EQ_FUNCTION_TYPE_CDisplay__InitWorld)DetourFunction((PBYTE)0x4A44F4, (PBYTE)CDisplay__InitWorld_4A44F4);
 
 	// Horse Support
-	ApplyHorseQolPatches();
+	ApplyHorseQolPatches(heqGfxMod);
 	
 	// Frogs and some luclin related fixes
 	ApplyFroglokSupport();
