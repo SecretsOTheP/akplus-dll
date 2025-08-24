@@ -2500,8 +2500,8 @@ void FixBazaarCrash()
 // Bazaar Crash Fix [end]
 // --------------------------------------------------------------------------
 
-// * level_range - Players must be +/- this level range to pvp
-// * pvp_min_level - Players below this level cannot pvp
+// * level_range - Players must be +/- this level range to pvp (default: 4)
+// * pvp_min_level - Players below this level cannot pvp (default: 6)
 void SetPvpLevelRange(BYTE level_range, BYTE pvp_min_level)
 {
 	PatchT(0x509CB2, (BYTE)level_range);
