@@ -364,7 +364,11 @@ public:
 	void EQPlayer::ChangeHeight(float height);
 	void EQPlayer::ChangePosition(uint8_t standingState);
 	void EQPlayer::FacePlayer(class EQPlayer* spawn);
-
+	static inline void ChangeStance(EQSPAWNINFO* entity, BYTE new_stance)
+	{
+		if (entity && entity->StandingState != new_stance)
+			reinterpret_cast<void(__thiscall*)(EQSPAWNINFO*, unsigned char)>(0x50be3c)(entity, new_stance);
+	}
 	static inline EQSPAWNINFO* GetSpawn(int spawnid) {
 		if (spawnid < 0 || spawnid >= 5000)
 			return nullptr;
