@@ -2162,15 +2162,15 @@ int __fastcall LegalPlayerRace_Detour(EQSPAWNINFO* this_ptr, void* not_used, int
 // Horse QOL Support
 // --------------------------------------------------------------------------
 
-// If true, uses the classic/AK-era horse behavior where your horse is invisbile but you retain the buff.
-bool UseTakpEraHiddenHorse = false;
+// If horses or elementals are disabled, it uses the AK-era logic of hiding the horse but keeping the buff
+bool UseLuclinElementals = true;
+BYTE UseLuclinHorses = 1;
 
 typedef int(__thiscall* EQ_FUNCTION_TYPE_EQPlayer__HasInvalidRiderTexture)(void* this_ptr);
 EQ_FUNCTION_TYPE_EQPlayer__HasInvalidRiderTexture HasInvalidRiderTexture_Trampoline;
-int __fastcall HasInvalidRiderTexture_Detour(EQSPAWNINFO* this_ptr, void* not_used) {
-	if (UseTakpEraHiddenHorse && this_ptr && this_ptr == EQ_OBJECT_PlayerSpawn)
-		return true;
-	return false;
+int __fastcall HasInvalidRiderTexture_Detour(EQSPAWNINFO* this_ptr, void* not_used)
+{
+	return UseLuclinHorses ? 0 : 1;
 }
 
 typedef void(__thiscall* EQ_FUNCTION_TYPE_EQPlayer__MountEQPlayer)(EQSPAWNINFO* this_ptr, EQSPAWNINFO* mount);
@@ -2179,10 +2179,7 @@ void __fastcall EQPlayer__MountEQPlayer_Detour(EQSPAWNINFO* this_ptr, int unused
 {
 	BYTE* cdisplay = *(BYTE**)EQ_POINTER_CDisplay;
 	BYTE display_0xA0 = cdisplay[0xA0];
-	if (UseTakpEraHiddenHorse && this_ptr && this_ptr == EQ_OBJECT_PlayerSpawn)
-		cdisplay[0xA0] = 0;
-	else
-		cdisplay[0xA0] = 1;
+	cdisplay[0xA0] = UseLuclinHorses;
 	EQPlayer__MountEQPlayer_Trampoline(this_ptr, horse);
 	cdisplay[0xA0] = display_0xA0;
 }
@@ -2284,11 +2281,8 @@ void MainLoop_Detour() {
 
 void ApplyHorseQolPatches()
 {
-	if (GetEQClientIniFlag_55B947("Defaults", "UseTakpHiddenHorse", "FALSE"))
-	{
-		// If true, uses the classic/takp-era horse behavior where your hosrse is invisbile but you retain the buff.
-		UseTakpEraHiddenHorse = true;
-	}
+	UseLuclinElementals = GetEQClientIniFlag_55B947("Defaults", "UseLuclinElementals", "TRUE");
+	UseLuclinHorses = UseLuclinElementals && GetEQClientIniFlag_55B947("Defaults", "UseLuclinHorses", "TRUE");
 	HasInvalidRiderTexture_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__HasInvalidRiderTexture)DetourFunction((PBYTE)0x0051FCA6, (PBYTE)HasInvalidRiderTexture_Detour);
 	EQPlayer__MountEQPlayer_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__MountEQPlayer)DetourFunction((PBYTE)0x51FD83, (PBYTE)EQPlayer__MountEQPlayer_Detour);
 
