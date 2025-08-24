@@ -949,7 +949,7 @@ DETOUR_TRAMPOLINE_EMPTY(unsigned char Eqmachooks::CEverQuest__HandleWorldMessage
 DETOUR_TRAMPOLINE_EMPTY(int Eqmachooks::CEQMusicManager__Set_Trampoline(int, int, int, int, int, int, int, int, int));
 DETOUR_TRAMPOLINE_EMPTY(int Eqmachooks::CEQMusicManager__Play_Trampoline(int, int));
 DETOUR_TRAMPOLINE_EMPTY(int Eqmachooks::CEQMusicManager__WavPlay_Trampoline(int, int));
-DETOUR_TRAMPOLINE_EMPTY(int __cdecl CEverQuest__DisplayScreen_Trampoline(char *));
+DETOUR_TRAMPOLINE_EMPTY(int CEverQuest__DisplayScreen_Trampoline(DWORD*, unsigned, char *));
 DETOUR_TRAMPOLINE_EMPTY(DWORD WINAPI GetModuleFileNameA_tramp(HMODULE,LPTSTR,DWORD));
 DETOUR_TRAMPOLINE_EMPTY(DWORD WINAPI WritePrivateProfileStringA_tramp(LPCSTR,LPCSTR,LPCSTR, LPCSTR));
 DETOUR_TRAMPOLINE_EMPTY(int __cdecl SendExeChecksum_Trampoline(void));
@@ -1023,7 +1023,7 @@ int __fastcall EQMACMQ_DETOUR_CCharacterSelectWnd__Quit(void* this_ptr, void* no
 	return EQMACMQ_REAL_CCharacterSelectWnd__Quit(this_ptr);
 }
 
-int __cdecl CEverQuest__DisplayScreen_Detour(char *a1) {
+int __fastcall CEverQuest__DisplayScreen_Detour(DWORD* this_game, unsigned unused_edx, char *a1) {
 	// this is the "Client Disconnected" screen - go back to windowed
 	if (!bWindowedMode) {
 		SetEQhWnd();
@@ -1038,7 +1038,7 @@ int __cdecl CEverQuest__DisplayScreen_Detour(char *a1) {
 		first_maximize = true;
 	}
 
-	return CEverQuest__DisplayScreen_Trampoline(a1);
+	return CEverQuest__DisplayScreen_Trampoline(this_game, unused_edx, a1);
 }
 
 LRESULT WINAPI WndProc_Detour(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam) {
