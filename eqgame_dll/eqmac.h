@@ -1899,19 +1899,29 @@ typedef struct _EQACTORCOLLISIONINFO
 	/* ...... */
 } EQACTORCOLLISIONINFO, *PEQACTORCOLLISIONINFO;
 
+typedef struct _EQACTORDEFINITION
+{
+	/* 0x000 */ DWORD Type;
+	/* 0x004 */ DWORD Unknown;
+	/* 0x008 */ char* Tag;
+	/* 0x00C */ DWORD* Unknown00C;
+	/* 0x010 */ DWORD RefCount;
+	/* ..... */
+} EQACTORDEFINITION, *PEQACTORDEFINITION;
+
 // T3D_tagACTORINSTANCE
 typedef struct _EQACTORINSTANCEINFO
 {
-	/* 0x0000 */ DWORD Unknown0000;
-	/* 0x0004 */ DWORD Unknown0004;
-	/* 0x0008 */ DWORD Unknown0008;
-	/* 0x000C */ DWORD Unknown000C;
+	/* 0x0000 */ DWORD Type;
+	/* 0x0004 */ DWORD Index;
+	/* 0x0008 */ DWORD Model;
+	/* 0x000C */ DWORD Flags;
 	/* 0x0010 */ FLOAT WorldX;
 	/* 0x0014 */ FLOAT WorldY;
 	/* 0x0018 */ FLOAT WorldZ;
-	/* 0x001C */ DWORD Unknown001C;
-	/* 0x0020 */ DWORD Unknown0020;
-	/* 0x0024 */ DWORD Unknown0024;
+	/* 0x001C */ DWORD Heading;
+	/* 0x0020 */ DWORD Pitch;
+	/* 0x0024 */ DWORD Roll;
 	/* 0x0028 */ DWORD RegionNumber;
 	/* 0x002C */ struct _EQACTORCOLLISIONINFO* CollisionInfo;
 	/* 0x0030 */ DWORD Unknown0030;
@@ -1919,6 +1929,7 @@ typedef struct _EQACTORINSTANCEINFO
 	/* 0x0038 */ FLOAT BoundingRadius;
 	/* 0x003C */ BYTE Unknown003C[36];
 	/* 0x0060 */ struct _EQSPAWNINFO* UserData;
+	/* 0x0064 */ struct _EQACTORDEFINITION* ActorDefinition;
 	/* ...... */
 } EQACTORINSTANCEINFO, *PEQACTORINSTANCEINFO;
 

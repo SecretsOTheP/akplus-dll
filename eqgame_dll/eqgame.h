@@ -90,9 +90,6 @@ __declspec(dllexport) class CShortBuffWindow* GetShortDurationBuffWindow();
 bool Handle_In_OP_WearChange(WearChange_Struct* wc);
 bool Handle_Out_OP_WearChange(WearChange_Struct* wc);
 
-// Horse Support
-unsigned short GetActualHorseRaceID(struct _EQSPAWNINFO* entity);
-
 struct _EQBUFFINFO* GetStartBuffArray(bool songs_buffs);
 void MakeGetBuffReturnSongs(bool enabled);
 

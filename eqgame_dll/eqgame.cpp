@@ -2159,209 +2159,177 @@ int __fastcall LegalPlayerRace_Detour(EQSPAWNINFO* this_ptr, void* not_used, int
 }
 
 // --------------------------------------------------------------------------
-// Legacy Model Horse Support
+// Horse QOL Support
 // --------------------------------------------------------------------------
 
-// Cache of which races have a RIDER_DAG
-std::map<WORD, bool> is_horse_map;
-
-thread_local WORD ActualHorseRaceID = 0;
-
-unsigned short GetActualHorseRaceID(_EQSPAWNINFO* entity)
-{
-	if (entity->Race == 216 && ActualHorseRaceID)
-		return ActualHorseRaceID;
-	return entity->Race;
-}
-
-EQDAGINFO* GetHeirarchicalSpriteDagByName(EQMODELINFO* sprite, char* dag_name)
-{
-	return reinterpret_cast<EQDAGINFO*(__cdecl*)(EQMODELINFO*, char*)>(*(int*)0x7F9A0C)(sprite, dag_name);
-}
-
-EQDAGINFO* GetRiderDag(EQSPAWNINFO* entity)
-{
-	if (!entity || !entity->ActorInfo || !entity->ActorInfo->ModelInfo || entity->ActorInfo->ModelInfo->Type != 20)
-		return nullptr;
-
-	char tag_name[8];
-	memset(tag_name, 0, sizeof(tag_name));
-	char dag_name[32];
-	memset(dag_name, 0, sizeof(dag_name));
-
-	reinterpret_cast<int(__thiscall*)(EQSPAWNINFO*,char*)>(0x50845D)(entity, tag_name); // GetActorTag(entity, buf)
-	sprintf(dag_name, "%sRIDER_DAG", tag_name);
-	EQDAGINFO* dag = GetHeirarchicalSpriteDagByName(entity->ActorInfo->ModelInfo, dag_name);
-#ifdef HORSE_LOGGING
-	print_chat("%s %s for race %u modeltype %u", dag_name, dag ? "found" : "not found", entity->Race, entity->ActorInfo->ModelInfo->Type);
-#endif
-	return dag;
-}
-
-// Replaced the basic EQ IsHorse() function which only checks Race == 216
-bool __fastcall IsHorse(EQSPAWNINFO* entity, int unused)
-{
-	if (!entity)
-		return false;
-
-	WORD race = entity->Race;
-	switch (race)
-	{
-	case 0: // none
-	case 1: // hum
-	case 2: // bar
-	case 3: // eru
-	case 4: // elf
-	case 5: // hie
-	case 6: // def
-	case 7: // hef
-	case 8: // dwaf
-	case 9: // trol
-	case 10: // ogr
-	case 11: // hlf
-	case 12: // gnm
-	case 26: // frg
-	case 27: // frg
-	case 128: // isk
-	case 130: // vah
-		return false;
-	case 216: // horse
-		return true;
-	}
-
-	auto it = is_horse_map.find(race);
-	if (it != is_horse_map.end())
-		return it->second;
-
-	// Cache the result
-	bool is_horse = GetRiderDag(entity) != nullptr;
-	is_horse_map[race] = is_horse;
-	return is_horse;
-}
-
-bool FakeHorseRace(EQSPAWNINFO* entity)
-{
-	if (entity && entity->Race != 216 && IsHorse(entity, 0))
-	{
-		ActualHorseRaceID = entity->Race;
-		entity->Race = 216;
-		return true;
-	}
-	return false;
-}
-
-void UnFakeHorseRace(EQSPAWNINFO* entity, bool faked)
-{
-	if (faked)
-	{
-		if (!entity)
-		{
-			// it despawned
-			ActualHorseRaceID = 0;
-#ifdef HORSE_LOGGING
-			print_chat("Custom Horse Despawned");
-#endif
-		}
-		else if (entity->Race == 216 && ActualHorseRaceID)
-		{
-			entity->Race = ActualHorseRaceID;
-			ActualHorseRaceID = 0;
-		}
-		else
-		{
-#ifdef HORSE_LOGGING
-			print_chat("Invalid state for UnFakeHorseRace Race %u TheadLocal %u", entity->Race, ActualHorseRaceID);
-#endif
-		}
-	}
-}
+BYTE UseLuclinHorses = 1;
 
 typedef int(__thiscall* EQ_FUNCTION_TYPE_EQPlayer__HasInvalidRiderTexture)(void* this_ptr);
 EQ_FUNCTION_TYPE_EQPlayer__HasInvalidRiderTexture HasInvalidRiderTexture_Trampoline;
-int __fastcall HasInvalidRiderTexture_Detour(EQSPAWNINFO* this_ptr, void* not_used) {
-	return false; // Allows any race/illusion to ride
-}
-
-typedef int(__thiscall* EQ_FUNCTION_TYPE_EQPlayer__IsUntexturedHorse)(void* this_ptr);
-EQ_FUNCTION_TYPE_EQPlayer__IsUntexturedHorse IsUntexturedHorse_Trampoline;
-int __fastcall IsUntexturedHorse_Detour(EQSPAWNINFO* horse, void* not_used)
+int __fastcall HasInvalidRiderTexture_Detour(EQSPAWNINFO* this_ptr, void* not_used)
 {
-	bool faked = FakeHorseRace(horse);
-	int result = IsUntexturedHorse_Trampoline(horse);
-	UnFakeHorseRace(horse, faked);
-	return result;
+	return UseLuclinHorses ? 0 : 1;
 }
 
+// Allows UseLuclinElementals=FALSE or UseLuclinHorses=FALSE ini option to work for disabling horses
 typedef void(__thiscall* EQ_FUNCTION_TYPE_EQPlayer__MountEQPlayer)(EQSPAWNINFO* this_ptr, EQSPAWNINFO* mount);
 EQ_FUNCTION_TYPE_EQPlayer__MountEQPlayer EQPlayer__MountEQPlayer_Trampoline;
 void __fastcall EQPlayer__MountEQPlayer_Detour(EQSPAWNINFO* this_ptr, int unused, EQSPAWNINFO* horse)
 {
-	bool faked = FakeHorseRace(horse);
-
 	BYTE* cdisplay = *(BYTE**)EQ_POINTER_CDisplay;
 	BYTE display_0xA0 = cdisplay[0xA0];
-
-#ifdef HORSE_LOGGING
-	print_chat("MountEQPlayer: horse = %08x, cur_horse_race = %u (custom: %u), Display[0xA0]=%u", (uintptr_t)horse, horse ? horse->Race : 0, ActualHorseRaceID, display_0xA0);
-#endif
-
-	cdisplay[0xA0] = 1;
+	cdisplay[0xA0] = UseLuclinHorses;
 	EQPlayer__MountEQPlayer_Trampoline(this_ptr, horse);
 	cdisplay[0xA0] = display_0xA0;
-
-	UnFakeHorseRace(horse, faked);
 }
 
-typedef void(__thiscall* EQ_FUNCTION_TYPE_CEverquest__ProcessControls)(void* this_ptr);
-EQ_FUNCTION_TYPE_CEverquest__ProcessControls CEverquest__ProcessControls_Trampoline;
-void __fastcall CEverquest__ProcessControls_Detour(void* this_ptr, int unused)
-{
-	EQSPAWNINFO* controlled = EQ_OBJECT_ControlledSpawn;
-	bool faked = controlled && controlled->ActorInfo && controlled->ActorInfo->Rider && FakeHorseRace(controlled);
-	CEverquest__ProcessControls_Trampoline(this_ptr);
-	UnFakeHorseRace(controlled, faked);
-}
+// Mounted Inertia Fix
+static void __fastcall EQPlayer_SetAccel_Detour(EQSPAWNINFO* this_entity, int unused_edx, float target_speed, int ignore_rider_flag) {
+	if (this_entity->MovementSpeed == target_speed) return;
 
-typedef int(__stdcall* EQ_FUNCTION_TYPE_EQPlayer__AttachPlayerToDag)(EQSPAWNINFO* player, EQSPAWNINFO* horse, EQDAGINFO* use_dag);
-EQ_FUNCTION_TYPE_EQPlayer__AttachPlayerToDag EQPlayer__AttachPlayerToDag_Trampoline;
-int __stdcall EQPlayer__AttachPlayerToDag_Detour(EQSPAWNINFO* player, EQSPAWNINFO* horse, EQDAGINFO* use_dag)
-{
-	bool faked = FakeHorseRace(horse);
-	int result = EQPlayer__AttachPlayerToDag_Trampoline(player, horse, use_dag);
-#ifdef HORSE_LOGGING
-	print_chat("AttachPlayerToDag: returned %i use_dag was %08x %s", result, (uintptr_t)use_dag, use_dag ? use_dag->Name : "");
-#endif
-	UnFakeHorseRace(horse, faked);
-	return result;
-}
+	// If not a mount with a rider, immediately accelerate to target_speed.
+	if (ignore_rider_flag || !this_entity->ActorInfo || !this_entity->ActorInfo->Rider)
+		this_entity->MovementSpeed = target_speed;
 
-typedef void(__thiscall* EQ_FUNCTION_TYPE_EQPlayer__Dismount)(EQSPAWNINFO* this_ptr);
-EQ_FUNCTION_TYPE_EQPlayer__Dismount EQPlayer__Dismount_Trampoline;
-void __fastcall EQPlayer__Dismount_Detour(EQSPAWNINFO* player, int unused)
-{
-	if (!player || !player->ActorInfo || !player->ActorInfo->Mount)
-	{
-		EQPlayer__Dismount_Trampoline(player);
+	// Special mount handling:
+	// Immediately decelerate to target speed.
+	if (target_speed < this_entity->MovementSpeed) {
+		this_entity->MovementSpeed = target_speed;
 		return;
 	}
-	
-	bool faked = FakeHorseRace(player->ActorInfo->Mount);
-	EQPlayer__Dismount_Trampoline(player);
-	UnFakeHorseRace(player->ActorInfo->Mount, faked);
+
+	// Accelerate immediately up to at least running speed but then slowly accelerate to max.
+	// The nominal acceleration is frame rate adjusted in process_physics.
+	// .006 constant used in formula was tested against original function. Can be tweaked later if necessary
+	// First 5 second total distance matches original function total distance in 5 seconds
+	// Max Speed horse reaches max speed in ~9 seconds so Max speed horse does not get supercharged by this fix
+	float min_speed = min(target_speed, 0.7f);
+	float process_physics_fps_factor = *reinterpret_cast<float*>(0x007d01dc);  // min(12.0, 0.02f * frame_time_ms)
+	float accel_speed = process_physics_fps_factor * 0.006 + this_entity->MovementSpeed;
+	this_entity->MovementSpeed = max(min_speed, min(target_speed, accel_speed));
 }
 
-typedef int(__stdcall* EQ_FUNCTION_TYPE_EQPlayer__DoAnim)(EQSPAWNINFO* player, int animation, int int2, int int3, float float1, int flag1, char flag2);
-EQ_FUNCTION_TYPE_EQPlayer__DoAnim EQPlayer__DoAnim_Trampoline;
-int __stdcall EQPlayer__DoAnim_Detour(EQSPAWNINFO* player, int animation, int int2, int int3, float float1, int flag1, char flag2)
+// Mounted Ducking fix
+typedef int(__cdecl* EQ_FUNCTION_TYPE_ExecuteCmd)(UINT cmd, bool isdown, int unk2);
+EQ_FUNCTION_TYPE_ExecuteCmd ExecuteCmd_Trampoline;
+int __cdecl ExecuteCmd_Detour(UINT cmd, bool isdown, int unk2)
 {
-	bool faked = player && player->ActorInfo && player->ActorInfo->Rider && player->ActorInfo->Rider->ActorInfo && player->ActorInfo->Rider->ActorInfo->Mount == player && FakeHorseRace(player);
-	int result = EQPlayer__DoAnim_Trampoline(player, animation, int2, int3, float1, flag1, flag2);
-	UnFakeHorseRace(player, faked);
-	return result;
+	if (cmd == 0xA) //duck while mounted command hook
+	{
+		if (!isdown) return 1;
+		if (EQ_OBJECT_ControlledSpawn && EQ_OBJECT_PlayerSpawn && EQ_OBJECT_ControlledSpawn->Race == 216 &&
+			EQ_OBJECT_ControlledSpawn != EQ_OBJECT_PlayerSpawn) {
+			char target_stance = (EQ_OBJECT_PlayerSpawn->StandingState == 100) ? 111 : 100;
+			EQPlayer::ChangeStance(EQ_OBJECT_PlayerSpawn, target_stance);
+			return 1;
+		}
+	}
+	return ExecuteCmd_Trampoline(cmd, isdown, unk2);
+}
+
+// Mounted Z - coordinate fix while levitating
+typedef __int64(_cdecl* EQ_FUNCTION_TYPE_PackPhysics)(int playerPositionPtr, void* packedDataBuffer);
+EQ_FUNCTION_TYPE_PackPhysics PackPhysics_Trampoline;
+__int64 _cdecl PackPhysics_Detour(int playerPositionPtr, void* packedDataBuffer) {
+	EQSPAWNINFO* controlled = EQ_OBJECT_ControlledSpawn;
+	EQSPAWNINFO* self = EQ_OBJECT_PlayerSpawn;
+	// Fix levitating mount coordinates before they get packed
+	if (controlled && self != controlled && controlled->ActorInfo && controlled->ActorInfo->Rider) {
+		// This is a mount update - check if we should preserve levitation
+		float* z_position = reinterpret_cast<float*>(playerPositionPtr + 0x8);
+		float rider_actual_z = controlled->ActorInfo->Rider->Z;
+		float mount_calculated_z = *z_position;
+		// If rider is significantly higher than calculated ground position, preserve levitation
+		if (rider_actual_z > mount_calculated_z + 5.0f) {
+			*z_position = rider_actual_z;  // Use rider's actual levitating position
+		}
+	}
+	return PackPhysics_Trampoline(playerPositionPtr, packedDataBuffer);
+}
+
+// Mounted Z - axis Downward Control
+typedef void(*EQ_FUNCTION_TYPE_MainLoop)();
+EQ_FUNCTION_TYPE_MainLoop MainLoop_Trampoline;
+void MainLoop_Detour() {
+
+	MainLoop_Trampoline();
+
+	// ExecuteCmd keeps an array (at least through [0xcd]) of key states.
+	static int* const kKeyDownStates = reinterpret_cast<int*>(0x007ce04c);
+	const int CMD_FORWARD = 3;
+	const int CMD_PITCH_DOWN = 16;
+	EQSPAWNINFO* self = EQ_OBJECT_PlayerSpawn;
+	EQSPAWNINFO* controlled = EQ_OBJECT_ControlledSpawn;
+	if (!self || !controlled) return;
+
+	bool auto_run_active = *reinterpret_cast<int*>(0x00798600) != 0;
+	if (!kKeyDownStates[CMD_FORWARD] && !auto_run_active) return;
+
+	if (self && self->ActorInfo && self->ActorInfo->Mount && self->ActorInfo->Mount == controlled) {
+		float pitch = self->Pitch;  // Range: -128 to 128
+		float speed_factor = (pitch < 0 ? -pitch : pitch) / 128.0f;
+		float movement_speed = (speed_factor * 2.0f);
+
+		// Use pitch direction to determine mounted z movement automatically
+		if (pitch < 0) { // Looking down = move down 
+			controlled->Z -= movement_speed;
+		}
+		// If pitch is 0 (looking straight ahead), no z movement
+	}
+}
+
+// Remove collision caused by invisible riderless horses
+typedef int(__cdecl* _t3dSetActorInvisible)(EQACTORINSTANCEINFO* view_actor, DWORD invisible);
+_t3dSetActorInvisible t3dSetActorInvisible_Trampoline;
+int __cdecl t3dSetActorInvisible_Detour(EQACTORINSTANCEINFO* view_actor, DWORD invisible)
+{
+	int ret = t3dSetActorInvisible_Trampoline(view_actor, invisible);
+	if (UseLuclinHorses == 0 && invisible == 1 && view_actor && view_actor->Type == 24 && view_actor->BoundingRadius > 0.0f && view_actor->ScaleFactor > 0 && view_actor->ActorDefinition && view_actor->ActorDefinition->Tag)
+	{
+		if (!strnicmp(view_actor->ActorDefinition->Tag, "HUM_ACTORDEF", 12) ||
+			!strnicmp(view_actor->ActorDefinition->Tag, "HSM_ACTORDEF", 12) ||
+			!strnicmp(view_actor->ActorDefinition->Tag, "HSF_ACTORDEF", 12) ||
+			!strnicmp(view_actor->ActorDefinition->Tag, "HSN_ACTORDEF", 12))
+		{
+			if (view_actor->UserData && view_actor->UserData->Race == 216)
+			{
+				view_actor->BoundingRadius = 0;
+				view_actor->ScaleFactor = 0;
+				Graphics::t3dUpdateTouchedRegions(view_actor, view_actor->RegionNumber);
+			}
+		}
+	}
+	return ret;
+}
+
+void ApplyHorseQolPatches(HINSTANCE heqGfxMod)
+{
+	bool UseLuclinElementals = GetEQClientIniFlag_55B947("Defaults", "UseLuclinElementals", "TRUE");
+	UseLuclinHorses = UseLuclinElementals && GetEQClientIniFlag_55B947("Defaults", "UseLuclinHorses", "TRUE");
+	HasInvalidRiderTexture_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__HasInvalidRiderTexture)DetourFunction((PBYTE)0x0051FCA6, (PBYTE)HasInvalidRiderTexture_Detour);
+	EQPlayer__MountEQPlayer_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__MountEQPlayer)DetourFunction((PBYTE)0x51FD83, (PBYTE)EQPlayer__MountEQPlayer_Detour);
+
+	// Inertia
+	DetourFunction((PBYTE)0x520074, (PBYTE)EQPlayer_SetAccel_Detour);
+	// Duck
+	ExecuteCmd_Trampoline = (EQ_FUNCTION_TYPE_ExecuteCmd)DetourFunction((PBYTE)0x54050C, (PBYTE)ExecuteCmd_Detour);
+	// Accurate Z-coord
+	PackPhysics_Trampoline = (EQ_FUNCTION_TYPE_PackPhysics)DetourFunction((PBYTE)0x4F224E, (PBYTE)PackPhysics_Detour);
+	// Downward Pitch Control
+	MainLoop_Trampoline = (EQ_FUNCTION_TYPE_MainLoop)DetourFunction((PBYTE)0x5473c3, (PBYTE)MainLoop_Detour);
+	// Prevent 'super speed' when in water
+	PatchT(0x0050BB31, (BYTE)0xB);
+	// Remove collision caused by invisible riderless horses
+	if (heqGfxMod)
+	{
+		_t3dSetActorInvisible t3dSetActorInvisible = (_t3dSetActorInvisible)GetProcAddress(heqGfxMod, "t3dSetActorInvisible");
+		if (t3dSetActorInvisible)
+			t3dSetActorInvisible_Trampoline = (_t3dSetActorInvisible)DetourFunction((PBYTE)t3dSetActorInvisible, (PBYTE)t3dSetActorInvisible_Detour);
+	}
 }
 
 // --------------------------------------------------------------------------
-// Legacy Model Horse Support [End]
+// Horse QOL Support [End]
 // --------------------------------------------------------------------------
 
 // --------------------------------------------------------------------------
@@ -2673,16 +2641,6 @@ int __fastcall EQPlayer_GetActorTag_Detour(EQSPAWNINFO* this_ptr, void* not_used
 	print_chat("[GetActorTag] Called with %u/%u", this_ptr->Race, this_ptr->Gender);
 #endif	
 
-	WORD orig_race = this_ptr->Race;
-	BYTE orig_gender = this_ptr->Gender;
-
-	// All horses/mounts use race 216. But we support custom mounts stored in a temporary variable. Restore the true ID temporarily for this ActorTag lookup
-	if (this_ptr->Race == 216)
-		this_ptr->Race = GetActualHorseRaceID(this_ptr);
-
-	if (IsPlayerOrPlayerCorpse(this_ptr) && IsFroglokRace(this_ptr->Race))
-		this_ptr->Race = 330;
-
 	int res = EQPlayer_GetActorTag_Trampoline(this_ptr, Destination);
 
 	RaceData* raceData = GetCustomRaceData(this_ptr->Race, this_ptr->Gender);
@@ -2697,10 +2655,6 @@ int __fastcall EQPlayer_GetActorTag_Detour(EQSPAWNINFO* this_ptr, void* not_used
 #ifdef RACE_LOGGING
 	print_chat("[GetActorTag] Returned %s", Destination);
 #endif
-
-	// Restore the horse to race 216
-	this_ptr->Race = orig_race;
-	this_ptr->Gender = orig_gender;
 	return res;
 }
 
@@ -5529,9 +5483,10 @@ void InitHooks()
 	PatchA((DWORD*)0x005595A7, &test3, sizeof(test3));
 
 	HMODULE eqgfx_dll = LoadLibraryA("eqgfx_dx8.dll");
+	HINSTANCE heqGfxMod = nullptr;
 	if (eqgfx_dll)
 	{
-		HINSTANCE heqGfxMod = GetModuleHandle("eqgfx_dx8.dll");
+		heqGfxMod = GetModuleHandle("eqgfx_dx8.dll");
 		if (heqGfxMod)
 		{
 			_s3dSetStringSpriteYonClip s3dSetStringSpriteYonClip = (_s3dSetStringSpriteYonClip)GetProcAddress(heqGfxMod, "s3dSetStringSpriteYonClip");
@@ -5638,13 +5593,7 @@ void InitHooks()
 	CDisplay__InitWorld_Trampoline = (EQ_FUNCTION_TYPE_CDisplay__InitWorld)DetourFunction((PBYTE)0x4A44F4, (PBYTE)CDisplay__InitWorld_4A44F4);
 
 	// Horse Support
-	HasInvalidRiderTexture_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__HasInvalidRiderTexture)DetourFunction((PBYTE)0x0051FCA6, (PBYTE)HasInvalidRiderTexture_Detour);
-	IsUntexturedHorse_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__HasInvalidRiderTexture)DetourFunction((PBYTE)0x0051FC6D, (PBYTE)IsUntexturedHorse_Detour);
-	EQPlayer__MountEQPlayer_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__MountEQPlayer)DetourFunction((PBYTE)0x51FD83, (PBYTE)EQPlayer__MountEQPlayer_Detour);
-	CEverquest__ProcessControls_Trampoline = (EQ_FUNCTION_TYPE_CEverquest__ProcessControls)DetourFunction((PBYTE)0x53F337, (PBYTE)CEverquest__ProcessControls_Detour);
-	EQPlayer__AttachPlayerToDag_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__AttachPlayerToDag)DetourFunction((PBYTE)0x4B079F, (PBYTE)EQPlayer__AttachPlayerToDag_Detour);
-	EQPlayer__Dismount_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__Dismount)DetourFunction((PBYTE)0x51FF5F, (PBYTE)EQPlayer__Dismount_Detour);
-	DetourFunction((PBYTE)0x51FCE6, (PBYTE)IsHorse);
+	ApplyHorseQolPatches(heqGfxMod);
 	
 	// Frogs and some luclin related fixes
 	ApplyFroglokSupport();
