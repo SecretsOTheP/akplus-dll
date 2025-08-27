@@ -86,8 +86,7 @@ void SendCustomSpawnAppearanceMessage(unsigned __int16 feature_id, unsigned __in
 // Song Window Support
 __declspec(dllexport) class CShortBuffWindow* GetShortDurationBuffWindow();
 
-// Tint Support
-bool Handle_In_OP_WearChange(WearChange_Struct* wc);
+// Buggy Helmet Fix
 bool Handle_Out_OP_WearChange(WearChange_Struct* wc);
 
 struct _EQBUFFINFO* GetStartBuffArray(bool songs_buffs);

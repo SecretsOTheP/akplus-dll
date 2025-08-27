@@ -372,13 +372,21 @@ public:
 	void EQPlayer::FacePlayer(class EQPlayer* spawn);
 	static inline void ChangeStance(EQSPAWNINFO* entity, BYTE new_stance)
 	{
-		if (entity && entity->StandingState != new_stance)
+		if (entity)
 			reinterpret_cast<void(__thiscall*)(EQSPAWNINFO*, unsigned char)>(0x50be3c)(entity, new_stance);
+	}
+	static inline void DoAnim(EQSPAWNINFO* entity, int a1, int a2, int a3, int a4, int a5)
+	{
+		reinterpret_cast<void(__stdcall*)(EQSPAWNINFO*, int, int, int, float, int)>(0x4D933A)(entity, a1, a2, a3, a4, a5);
 	}
 	static inline EQSPAWNINFO* GetSpawn(int spawnid) {
 		if (spawnid < 0 || spawnid >= 5000)
 			return nullptr;
 		return reinterpret_cast<EQSPAWNINFO**>(0x0078c47c)[spawnid];
+	}
+	static inline bool MyFeetAreOnGround(EQSPAWNINFO* entity)
+	{
+		return reinterpret_cast<bool(__thiscall*)(EQSPAWNINFO*)>(0x50BA07)(entity);
 	}
 	static void SaveMaterialColor(EQSPAWNINFO* entity, int wear_slot, DWORD color)
 	{
