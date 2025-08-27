@@ -2172,7 +2172,8 @@ static void* __fastcall CDisplay__CreatePlayerActor_Detour(int* this_ptr, int u,
 		entity->TargetType = EQ_SPAWN_TARGET_TYPE_CANNOT_TARGET;
 		// Since the horse has no collision, stop it from falling through the world (otherwise, the owner will get warped to the zone's safe spot and die to fall damage)
 		entity->LevitationState = 1;
-		entity->ActorInfo->IsAffectedByGravity = 0;
+		if (entity->ActorInfo)
+			entity->ActorInfo->IsAffectedByGravity = 0;
 	}
 	return CDisplay__CreatePlayerActor_Trampoline(this_ptr, entity);
 }

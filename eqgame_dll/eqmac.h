@@ -1909,6 +1909,12 @@ typedef struct _EQACTORDEFINITION
 	/* ..... */
 } EQACTORDEFINITION, *PEQACTORDEFINITION;
 
+union ACTORINSTANCEUSERDATA
+{
+	int Value; // Can be <= 16
+	struct _EQSPAWNINFO* Spawn;
+};
+
 // T3D_tagACTORINSTANCE
 typedef struct _EQACTORINSTANCEINFO
 {
@@ -1928,9 +1934,9 @@ typedef struct _EQACTORINSTANCEINFO
 	/* 0x0034 */ FLOAT ScaleFactor;
 	/* 0x0038 */ FLOAT BoundingRadius;
 	/* 0x003C */ BYTE Unknown003C[36];
-	/* 0x0060 */ struct _EQSPAWNINFO* UserData;
+	/* 0x0060 */ ACTORINSTANCEUSERDATA UserData;
 	/* 0x0064 */ struct _EQACTORDEFINITION* ActorDefinition;
-	/* 0x0068 */ DWORD Unknown0064[41];
+	/* 0x0068 */ DWORD Unknown0068[41];
 	/* 0x010C */ DWORD SurfacePitchType; // 1 = None, 2 = Animals, 3 = Spiders
 	/* ...... */
 } EQACTORINSTANCEINFO, *PEQACTORINSTANCEINFO;
