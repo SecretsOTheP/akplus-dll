@@ -1909,6 +1909,12 @@ typedef struct _EQACTORDEFINITION
 	/* ..... */
 } EQACTORDEFINITION, *PEQACTORDEFINITION;
 
+union ACTORINSTANCEUSERDATA
+{
+	int Value; // Can be <= 16
+	struct _EQSPAWNINFO* Spawn;
+};
+
 // T3D_tagACTORINSTANCE
 typedef struct _EQACTORINSTANCEINFO
 {
@@ -1928,8 +1934,10 @@ typedef struct _EQACTORINSTANCEINFO
 	/* 0x0034 */ FLOAT ScaleFactor;
 	/* 0x0038 */ FLOAT BoundingRadius;
 	/* 0x003C */ BYTE Unknown003C[36];
-	/* 0x0060 */ struct _EQSPAWNINFO* UserData;
+	/* 0x0060 */ ACTORINSTANCEUSERDATA UserData;
 	/* 0x0064 */ struct _EQACTORDEFINITION* ActorDefinition;
+	/* 0x0068 */ DWORD Unknown0068[41];
+	/* 0x010C */ DWORD SurfacePitchType; // 1 = None, 2 = Animals, 3 = Spiders
 	/* ...... */
 } EQACTORINSTANCEINFO, *PEQACTORINSTANCEINFO;
 
@@ -2074,6 +2082,20 @@ typedef struct _EQACTORINFO
 	/* 0x043C */ DWORD IsTrader;
 	/* ...... */
 } EQACTORINFO, *PEQACTORINFO;
+
+typedef struct _PlayerPosition // sizeof=0x28
+{
+	/* 0x000 */ FLOAT X;
+	/* 0x004 */ FLOAT Y;
+	/* 0x008 */ FLOAT Z;
+	/* 0x00C */ FLOAT Heading;
+	/* 0x010 */ FLOAT Unk;
+	/* 0x014 */ FLOAT MovementSpeed;
+	/* 0x018 */ FLOAT MovementSpeedY;
+	/* 0x01C */ FLOAT MovementSpeedX;
+	/* 0x020 */ FLOAT MovementSpeedZ;
+	/* 0x024 */ FLOAT MovementSpeedHeading;
+} PlayerPosition, *PPlayerPosition;
 
 // sizeof 0x168
 typedef struct _EQSPAWNINFO

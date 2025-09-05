@@ -710,10 +710,6 @@ public:
 			WriteLog("EQGAME: CEverQuest__HandleWorldMessage_Detour OP_LogServer=0xc341 Can go Fullscreen (1)");
 #endif
 		}
-		else if (Opcode == 0x4092 && len >= sizeof(WearChange_Struct))
-		{
-			Handle_In_OP_WearChange((WearChange_Struct*)Buffer);
-		}
 		return CEverQuest__HandleWorldMessage_Trampoline(con,Opcode,Buffer,len);
 	}
 
@@ -1916,11 +1912,6 @@ int __cdecl do_quit_Detour(int a1, int a2) {
 	return do_quit_Trampoline(a1, a2);
 }
 
-bool isFRM_FRF(char* str)
-{
-	return str && str[0] == 'F' && str[1] == 'R' && (str[2] == 'M' || str[2] == 'F');
-}
-
 bool isChest(char* str)
 {
 	return strncmp(&str[3], "CH", 2) == 0;
@@ -1941,155 +1932,9 @@ bool isRobe(char* str)
 	return str[5] == '1' && str[6] >= '0' && str[6] <= '6';
 }
 
-void fix_FRM_FRF_Material(char* str)
-{
-	if (str[8] == '2' && (isChest(str) || isLeg(str))) // Chest or Legs
-		str[7] = '0'; // override the Face/Head variant back to zero on Chest 02 and Leg 02
-}
-
-typedef int(__thiscall* EQ_FUNCTION_TYPE_CDisplay__ReplaceMaterial)(CDisplay* this_ptr, char* OldMaterial, char* NewMaterial, EQMODELINFO* Sprite, BYTE* pColor, int partial_match);
-EQ_FUNCTION_TYPE_CDisplay__ReplaceMaterial CDisplay__ReplaceMaterial_Trampoline;
-
-int FRM_FRF_ReplaceMaterial(CDisplay* this_ptr, char* OldMaterial, char* NewMaterial, EQMODELINFO* Sprite, BYTE* pColor, int partial_match)
-{
-
-	// -- Make Luclin Frogloks Work
-	fix_FRM_FRF_Material(NewMaterial);
-	if (OldMaterial)
-		fix_FRM_FRF_Material(OldMaterial);
-	if (isLeg(NewMaterial))
-		partial_match = 1;
-
-	int result = CDisplay__ReplaceMaterial_Trampoline(this_ptr, OldMaterial, NewMaterial, Sprite, pColor, 1);
-#ifdef RACE_LOGGING
-	print_chat("FRM ReplaceMaterial %s %s %i", OldMaterial, NewMaterial, result);
-#endif
-	if (result == 0 && OldMaterial && OldMaterial[7] != '0')
-	{
-		char tmp = OldMaterial[7];
-		OldMaterial[7] = '0';
-		result = CDisplay__ReplaceMaterial_Trampoline(this_ptr, OldMaterial, NewMaterial, Sprite, pColor, 1);
-#ifdef RACE_LOGGING
-		print_chat("FRM ReplaceMaterial(retry) %s %s %i", OldMaterial, NewMaterial, result);
-#endif
-		OldMaterial[7] = tmp;
-	}
-
-	if (isChest(NewMaterial) && NewMaterial[8] == '1')
-	{
-		if (isRobe(NewMaterial))
-		{
-			char face = NewMaterial[7];
-			char NewLegMaterial[16];
-			char OldLegMaterial[16];
-
-			strncpy(NewLegMaterial, NewMaterial, 3); // Copy actortag
-			strncpy(OldLegMaterial, NewMaterial, 3); // Copy actortag
-			strcpy(&NewLegMaterial[3], "LG__02_MDF");
-			strcpy(&OldLegMaterial[3], "LG__02_MDF");
-			NewLegMaterial[5] = NewMaterial[5];
-			NewLegMaterial[6] = NewMaterial[6];
-
-			// Swap Leg02
-			int r3 = CDisplay__ReplaceMaterial_Trampoline(this_ptr, OldLegMaterial, NewLegMaterial, Sprite, pColor, 1);
-#ifdef RACE_LOGGING
-			print_chat("FRM/FRF Extra ReplaceMaterial %s %s %i", OldLegMaterial, NewLegMaterial, r3);
-#endif
-		}
-	}
-
-	return result;
-}
-
-int __fastcall CDisplay__ReplaceMaterial_Detour(CDisplay* this_ptr, int unused, char* OldMaterial, char* NewMaterial, EQMODELINFO* Sprite, BYTE* pColor, int partial_match)
-{
-	if (isFRM_FRF(NewMaterial))
-	{
-		return FRM_FRF_ReplaceMaterial(this_ptr, OldMaterial, NewMaterial, Sprite, pColor, partial_match);
-	}
-	int r = CDisplay__ReplaceMaterial_Trampoline(this_ptr, OldMaterial, NewMaterial, Sprite, pColor, partial_match);
-#ifdef RACE_LOGGING
-	print_chat("Orig ReplaceMaterial %s %s %i", OldMaterial, NewMaterial, r);
-#endif
-	return r;
-}
-
-typedef char(__thiscall* EQ_FUNCTION_TYPE_CFacePick__CycleThroughFHEB)(void* this_ptr, int IsNext, int zero);
-EQ_FUNCTION_TYPE_CFacePick__CycleThroughFHEB CFacePick__CycleThroughFHEB_Trampoline;
-char __fastcall CFacePick__CycleThroughFHEB_Detour(void* this_ptr, int unused, int IsNext, int zero)
-{
-	EQSPAWNINFO* player = EQ_OBJECT_PlayerSpawn;
-	if (player && player->Race == 330 && player->ActorInfo && player->ActorInfo->ActorInfoPrototype && player->ActorInfo->ActorInfoPrototype->IsLuclinModel)
-	{
-		PatchT(0x41AA43 + 1, (BYTE)9); // MaxFaces
-		char result = CFacePick__CycleThroughFHEB_Trampoline(this_ptr, IsNext, zero);
-		PatchT(0x41AA43 + 1, (BYTE)7); // MaxFaces
-		return result;
-	}
-	else
-	{
-		return CFacePick__CycleThroughFHEB_Trampoline(this_ptr, IsNext, zero);
-	}
-}
-
-void ApplyFroglokSupport()
-{
-	// Increase number of supported wrist textures
-	BYTE u8_2 = 2;
-	PatchA((void*)(0x4A24A0 + 1), &u8_2, 1);
-
-	// Change a jump from 'Race != 130' to 'Race < 130' for a check on whether Face color affects skin color (true for Guktans 330)
-	BYTE u8_JL = 0x7C;
-	PatchA((void*)(0x4A2215), &u8_JL, 1);
-
-	// Change a jump from 'Race != 130' to 'Race < 130' for a check on whether Face color affects skin color (true for Guktans 330)
-	BYTE u16_JL[2] = { 0x0F, 0x8C };
-	PatchA((void*)(0x4A1116), &u16_JL, 2);
-
-	// Allows cycling through 9 faces on froglok
-	CFacePick__CycleThroughFHEB_Trampoline = (EQ_FUNCTION_TYPE_CFacePick__CycleThroughFHEB)DetourFunction((PBYTE)0x41A8D0, (PBYTE)CFacePick__CycleThroughFHEB_Detour);
-}
-
 bool IsLuclinModel(EQSPAWNINFO* spawn)
 {
 	return spawn && spawn->ActorInfo && spawn->ActorInfo->ActorInfoPrototype && spawn->ActorInfo->ActorInfoPrototype->IsLuclinModel;
-}
-
-bool IsFroglokRace(int Race)
-{
-#ifdef RACE_LOGGING
-	print_chat("[IsFroglokRace] %i", Race);
-#endif
-	return Race == 26 || Race == 27 || Race == 330;
-}
-
-// Wish I could make this actually detect if you have the patched s3d files, but it's not really available on zone-in.
-bool IsCustomFroglokSupported()
-{
-	RaceData* rData = GetCustomRaceData(330, 0);
-	if (!rData)
-	{
-#ifdef RACE_LOGGING
-		print_chat("[IsCustomFroglokSupported] false (RaceData not found)");
-#endif
-		return false;
-	}
-	return true;
-}
-
-bool IsPlayerOrPlayerCorpse(EQSPAWNINFO* player)
-{
-	return (player->Type == 0) || (player->Type == 3);
-}
-
-typedef int(__stdcall* EQ_FUNCTION_TYPE_EQPlayer__GetRaceOffsetForAttachmentITs)(EQSPAWNINFO* entity);
-EQ_FUNCTION_TYPE_EQPlayer__GetRaceOffsetForAttachmentITs EQPlayer__GetRaceOffsetForAttachmentITs_Trampoline;
-int __stdcall EQPlayer__GetRaceOffsetForAttachmentITs_49F7C7(EQSPAWNINFO* entity)
-{
-	if (entity && entity->Race == 330) {
-		return entity->Gender == 1 ? 870 : 840;
-	}
-	return EQPlayer__GetRaceOffsetForAttachmentITs_Trampoline(entity);
 }
 
 WORD ToNonVeliousArmorMaterial(WORD material, BYTE player_class)
@@ -2132,55 +1977,54 @@ void __fastcall CDisplay__SetDefaultITAttachments_4A02E8(CDisplay* this_ptr, int
 	memcpy(&ent->EquipmentMaterialType[1], orig_materials, sizeof(orig_materials));
 }
 
-typedef int(__thiscall* EQ_FUNCTION_TYPE_PickEyeColor)(CDisplay* this_ptr, EQSPAWNINFO* player, char param3, int selection);
-EQ_FUNCTION_TYPE_PickEyeColor PickEyeColor_Trampoline;
-int __fastcall PickEyeColor_4A0792(CDisplay* this_ptr, int unused, EQSPAWNINFO* player, char param3, int selection)
-{
-	// Luclin froglok eyes are bugging out the material palette right now. For now, disable this part of the model.
-	if (player && player->Race == 330 && IsLuclinModel(player))
-	{
-#ifdef RACE_LOGGING
-		print_chat("PickEyeColor_4A0792(param3=%i, param4=%i", param3, selection);
-#endif
-		return 0;
-	}
-	return PickEyeColor_Trampoline(this_ptr, player, param3, selection);
-}
-
-typedef int(__thiscall* EQ_FUNCTION_TYPE_EQPlayer__LegalPlayerRace)(EQSPAWNINFO* this_ptr, int in_race);
-EQ_FUNCTION_TYPE_EQPlayer__LegalPlayerRace LegalPlayerRace_Trampoline;
-int __fastcall LegalPlayerRace_Detour(EQSPAWNINFO* this_ptr, void* not_used, int in_race) {
-	short race = in_race;
-	if (race < 0)
-		race = this_ptr->Race;
-	if (race == 330)
-		return 1;
-	return LegalPlayerRace_Trampoline(this_ptr, in_race);
-}
-
 // --------------------------------------------------------------------------
 // Horse QOL Support
 // --------------------------------------------------------------------------
 
-BYTE UseLuclinHorses = 1;
+bool HorsesEnabled = false; // Initialized from eqclient.ini (UseLuclinElementals/UseLuclinHorses)
 
-typedef int(__thiscall* EQ_FUNCTION_TYPE_EQPlayer__HasInvalidRiderTexture)(void* this_ptr);
+typedef bool(__thiscall* EQ_FUNCTION_TYPE_EQPlayer__HasInvalidRiderTexture)(void* this_ptr);
 EQ_FUNCTION_TYPE_EQPlayer__HasInvalidRiderTexture HasInvalidRiderTexture_Trampoline;
-int __fastcall HasInvalidRiderTexture_Detour(EQSPAWNINFO* this_ptr, void* not_used)
+bool __fastcall HasInvalidRiderTexture_Detour(EQSPAWNINFO* this_ptr, void* not_used)
 {
-	return UseLuclinHorses ? 0 : 1;
+	return !HorsesEnabled;
 }
 
-// Allows UseLuclinElementals=FALSE or UseLuclinHorses=FALSE ini option to work for disabling horses
 typedef void(__thiscall* EQ_FUNCTION_TYPE_EQPlayer__MountEQPlayer)(EQSPAWNINFO* this_ptr, EQSPAWNINFO* mount);
 EQ_FUNCTION_TYPE_EQPlayer__MountEQPlayer EQPlayer__MountEQPlayer_Trampoline;
 void __fastcall EQPlayer__MountEQPlayer_Detour(EQSPAWNINFO* this_ptr, int unused, EQSPAWNINFO* horse)
 {
 	BYTE* cdisplay = *(BYTE**)EQ_POINTER_CDisplay;
 	BYTE display_0xA0 = cdisplay[0xA0];
-	cdisplay[0xA0] = UseLuclinHorses;
+	cdisplay[0xA0] = HorsesEnabled;
 	EQPlayer__MountEQPlayer_Trampoline(this_ptr, horse);
 	cdisplay[0xA0] = display_0xA0;
+}
+
+// Horse Tilt
+typedef void(__cdecl* EQ_FUNCTION_TYPE_ProcessPhysics)(EQSPAWNINFO* ent, int* EQMissile, DWORD* EQEffect);
+EQ_FUNCTION_TYPE_ProcessPhysics ProcessPhysics_Trampoline;
+void __cdecl ProcessPhysics_Detour(EQSPAWNINFO* ent, int* missile, DWORD* effect)
+{
+	ProcessPhysics_Trampoline(ent, missile, effect);
+	if (ent && ent->Race == 216 && ent->ActorInfo && ent->ActorInfo->ActorInstance && ent->ActorInfo->Rider)
+	{
+		if (ent->LevitationState != 0)
+		{
+			float ground_distance = ent->ActorInfo->Z + ent->ModelHeightOffset - ent->Z; // Distance above ground (negative units)
+			if (ground_distance <= -5.0f)
+			{
+				if (ent->MovementSpeed != 0)
+					ent->ActorInfo->ActorInstance->SurfacePitchType = 1;
+			}
+			else if (ground_distance > -2.5f)
+				ent->ActorInfo->ActorInstance->SurfacePitchType = 2;
+		}
+		else
+		{
+			ent->ActorInfo->ActorInstance->SurfacePitchType = 2;
+		}
+	}
 }
 
 // Mounted Inertia Fix
@@ -2217,10 +2061,17 @@ int __cdecl ExecuteCmd_Detour(UINT cmd, bool isdown, int unk2)
 	if (cmd == 0xA) //duck while mounted command hook
 	{
 		if (!isdown) return 1;
-		if (EQ_OBJECT_ControlledSpawn && EQ_OBJECT_PlayerSpawn && EQ_OBJECT_ControlledSpawn->Race == 216 &&
-			EQ_OBJECT_ControlledSpawn != EQ_OBJECT_PlayerSpawn) {
-			char target_stance = (EQ_OBJECT_PlayerSpawn->StandingState == 100) ? 111 : 100;
-			EQPlayer::ChangeStance(EQ_OBJECT_PlayerSpawn, target_stance);
+		EQSPAWNINFO* controlled = EQ_OBJECT_ControlledSpawn;
+		EQSPAWNINFO* self = EQ_OBJECT_PlayerSpawn;
+		if (controlled && self && self->CharInfo && self->ActorInfo && controlled->Race == 216 && controlled != self && controlled->ActorInfo && controlled->ActorInfo->Rider == self)
+		{
+			float tmp = self->ActorInfo->ZCeiling;
+			self->ActorInfo->ZCeiling = self->Z + self->ModelHeightOffset + 1.0f; // Prevents getting stuck in duck animation
+			if (self->StandingState == EQ_STANDING_STATE_DUCKING)
+				EQPlayer::ChangeStance(self, EQ_STANDING_STATE_STANDING);
+			else if (self->StandingState == EQ_STANDING_STATE_STANDING)
+				EQPlayer::ChangeStance(self, EQ_STANDING_STATE_DUCKING);
+			self->ActorInfo->ZCeiling = tmp;
 			return 1;
 		}
 	}
@@ -2228,32 +2079,23 @@ int __cdecl ExecuteCmd_Detour(UINT cmd, bool isdown, int unk2)
 }
 
 // Mounted Z - coordinate fix while levitating
-typedef __int64(_cdecl* EQ_FUNCTION_TYPE_PackPhysics)(int playerPositionPtr, void* packedDataBuffer);
+typedef __int64(_cdecl* EQ_FUNCTION_TYPE_PackPhysics)(PlayerPosition* playerPositionPtr, void* packedDataBuffer);
 EQ_FUNCTION_TYPE_PackPhysics PackPhysics_Trampoline;
-__int64 _cdecl PackPhysics_Detour(int playerPositionPtr, void* packedDataBuffer) {
+__int64 _cdecl PackPhysics_Detour(PlayerPosition* playerPositionPtr, void* packedDataBuffer) {
 	EQSPAWNINFO* controlled = EQ_OBJECT_ControlledSpawn;
 	EQSPAWNINFO* self = EQ_OBJECT_PlayerSpawn;
 	// Fix levitating mount coordinates before they get packed
-	if (controlled && self != controlled && controlled->ActorInfo && controlled->ActorInfo->Rider) {
-		// This is a mount update - check if we should preserve levitation
-		float* z_position = reinterpret_cast<float*>(playerPositionPtr + 0x8);
-		float rider_actual_z = controlled->ActorInfo->Rider->Z;
-		float mount_calculated_z = *z_position;
-		// If rider is significantly higher than calculated ground position, preserve levitation
-		if (rider_actual_z > mount_calculated_z + 5.0f) {
-			*z_position = rider_actual_z;  // Use rider's actual levitating position
-		}
+	if (controlled && self != controlled && controlled->Race == 216 && controlled->ActorInfo && controlled->ActorInfo->Rider == self) {
+		float playerZ = self->Z - self->ModelHeightOffset;
+		if (playerZ + 0.501f >= playerPositionPtr->Z)
+			playerPositionPtr->Z = playerZ;
 	}
 	return PackPhysics_Trampoline(playerPositionPtr, packedDataBuffer);
 }
 
-// Mounted Z - axis Downward Control
-typedef void(*EQ_FUNCTION_TYPE_MainLoop)();
-EQ_FUNCTION_TYPE_MainLoop MainLoop_Trampoline;
-void MainLoop_Detour() {
-
-	MainLoop_Trampoline();
-
+// Mounted Z - axis Downward Control and horse tilt
+void HorseLeviatePitchControl()
+{
 	// ExecuteCmd keeps an array (at least through [0xcd]) of key states.
 	static int* const kKeyDownStates = reinterpret_cast<int*>(0x007ce04c);
 	const int CMD_FORWARD = 3;
@@ -2262,69 +2104,109 @@ void MainLoop_Detour() {
 	EQSPAWNINFO* controlled = EQ_OBJECT_ControlledSpawn;
 	if (!self || !controlled) return;
 
-	bool auto_run_active = *reinterpret_cast<int*>(0x00798600) != 0;
-	if (!kKeyDownStates[CMD_FORWARD] && !auto_run_active) return;
-
-	if (self && self->ActorInfo && self->ActorInfo->Mount && self->ActorInfo->Mount == controlled) {
-		float pitch = self->Pitch;  // Range: -128 to 128
-		float speed_factor = (pitch < 0 ? -pitch : pitch) / 128.0f;
-		float movement_speed = (speed_factor * 2.0f);
-
-		// Use pitch direction to determine mounted z movement automatically
-		if (pitch < 0) { // Looking down = move down 
-			controlled->Z -= movement_speed;
-		}
-		// If pitch is 0 (looking straight ahead), no z movement
-	}
-}
-
-// Remove collision caused by invisible riderless horses
-typedef int(__cdecl* _t3dSetActorInvisible)(EQACTORINSTANCEINFO* view_actor, DWORD invisible);
-_t3dSetActorInvisible t3dSetActorInvisible_Trampoline;
-int __cdecl t3dSetActorInvisible_Detour(EQACTORINSTANCEINFO* view_actor, DWORD invisible)
-{
-	int ret = t3dSetActorInvisible_Trampoline(view_actor, invisible);
-	if (UseLuclinHorses == 0 && invisible == 1 && view_actor && view_actor->Type == 24 && view_actor->BoundingRadius > 0.0f && view_actor->ScaleFactor > 0 && view_actor->ActorDefinition && view_actor->ActorDefinition->Tag)
+	if (controlled->Race == 216 && self->ActorInfo && self->ActorInfo->Mount && self->ActorInfo->Mount == controlled)
 	{
-		if (!strnicmp(view_actor->ActorDefinition->Tag, "HUM_ACTORDEF", 12) ||
-			!strnicmp(view_actor->ActorDefinition->Tag, "HSM_ACTORDEF", 12) ||
-			!strnicmp(view_actor->ActorDefinition->Tag, "HSF_ACTORDEF", 12) ||
-			!strnicmp(view_actor->ActorDefinition->Tag, "HSN_ACTORDEF", 12))
+		if (self->LevitationState != 0)
 		{
-			if (view_actor->UserData && view_actor->UserData->Race == 216)
+			float pitch = self->Pitch;  // Range: -128 to 128
+			float ground_distance = controlled->ActorInfo->Z + controlled->ModelHeightOffset - controlled->Z; // Distance above ground (negative units)
+
+			// Pitch Control
+			if (pitch < 0 && controlled->MovementSpeed > 0)
 			{
-				view_actor->BoundingRadius = 0;
-				view_actor->ScaleFactor = 0;
-				Graphics::t3dUpdateTouchedRegions(view_actor, view_actor->RegionNumber);
+				bool auto_run_active = *reinterpret_cast<int*>(0x00798600) != 0;
+				if (kKeyDownStates[CMD_FORWARD] || auto_run_active)
+				{
+					if (ground_distance <= -2.501f)
+					{
+						// If off the ground set their Z speed based on pitch.
+						float down_speed = std::abs(pitch) / -14.0f;
+						if (down_speed < -7.0f)
+							down_speed = -7.0f;
+						if (controlled->MovementSpeedZ <= 0.0f && controlled->MovementSpeedZ > down_speed)
+							controlled->MovementSpeedZ = down_speed;
+					}
+					else
+					{
+						// Close to the floor.
+						// This approach prevents the 'thud' sound some playing repeatedly if they stay pitched down running into the floor.
+						float speed_factor = -pitch / 64.0f;
+						controlled->Z -= speed_factor;
+					}
+				}
 			}
 		}
 	}
-	return ret;
+}
+
+typedef void(*EQ_FUNCTION_TYPE_MainLoop)();
+EQ_FUNCTION_TYPE_MainLoop MainLoop_Trampoline;
+void MainLoop_Detour()
+{
+	HorseLeviatePitchControl();
+	MainLoop_Trampoline();
+}
+
+typedef int(__thiscall* EQ_FUNCTION_TYPE_EQPlayer_bodyEnvironmentChange)(EQSPAWNINFO* this_ptr, BYTE swimmingWaterType);
+EQ_FUNCTION_TYPE_EQPlayer_bodyEnvironmentChange EQPlayer_bodyEnvironmentChange_Trampoline;
+int __fastcall EQPlayer_bodyEnvironmentChange_Detour(EQSPAWNINFO* this_ptr, int u, BYTE swimmingWaterType)
+{
+	if (this_ptr && this_ptr->Race == 216)
+	{
+		// Prevent horse 'super speed' when in water
+		PatchT(0x0050BB31, (BYTE)11);
+		int ret = EQPlayer_bodyEnvironmentChange_Trampoline(this_ptr, swimmingWaterType);
+		PatchT(0x0050BB31, (BYTE)5);
+		return ret;
+	}
+	return EQPlayer_bodyEnvironmentChange_Trampoline(this_ptr, swimmingWaterType);
+}
+
+typedef void*(__thiscall* EQ_FUNCTION_TYPE_CDisplay__CreatePlayerActor)(int* this_ptr, EQSPAWNINFO* entity);
+EQ_FUNCTION_TYPE_CDisplay__CreatePlayerActor CDisplay__CreatePlayerActor_Trampoline;
+static void* __fastcall CDisplay__CreatePlayerActor_Detour(int* this_ptr, int u, EQSPAWNINFO* entity)
+{
+	if (entity && entity->Race == 216)
+	{
+		// QOL - Prevents the hidden horse from colliding with players, blocking zonelines, etc
+		entity->TargetType = EQ_SPAWN_TARGET_TYPE_CANNOT_TARGET;
+		// Since the horse has no collision, stop it from falling through the world (otherwise, the owner will get warped to the zone's safe spot and die to fall damage)
+		entity->LevitationState = 1;
+		if (entity->ActorInfo)
+			entity->ActorInfo->IsAffectedByGravity = 0;
+	}
+	return CDisplay__CreatePlayerActor_Trampoline(this_ptr, entity);
 }
 
 void ApplyHorseQolPatches(HINSTANCE heqGfxMod)
 {
-	bool UseLuclinElementals = GetEQClientIniFlag_55B947("Defaults", "UseLuclinElementals", "TRUE");
-	UseLuclinHorses = UseLuclinElementals && GetEQClientIniFlag_55B947("Defaults", "UseLuclinHorses", "TRUE");
+	HorsesEnabled = GetEQClientIniFlag_55B947("Defaults", "UseLuclinElementals", "TRUE") && GetEQClientIniFlag_55B947("Defaults", "UseLuclinHorses", "TRUE");
 	HasInvalidRiderTexture_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__HasInvalidRiderTexture)DetourFunction((PBYTE)0x0051FCA6, (PBYTE)HasInvalidRiderTexture_Detour);
 	EQPlayer__MountEQPlayer_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__MountEQPlayer)DetourFunction((PBYTE)0x51FD83, (PBYTE)EQPlayer__MountEQPlayer_Detour);
 
-	// Inertia
-	DetourFunction((PBYTE)0x520074, (PBYTE)EQPlayer_SetAccel_Detour);
-	// Duck
-	ExecuteCmd_Trampoline = (EQ_FUNCTION_TYPE_ExecuteCmd)DetourFunction((PBYTE)0x54050C, (PBYTE)ExecuteCmd_Detour);
-	// Accurate Z-coord
-	PackPhysics_Trampoline = (EQ_FUNCTION_TYPE_PackPhysics)DetourFunction((PBYTE)0x4F224E, (PBYTE)PackPhysics_Detour);
-	// Downward Pitch Control
-	MainLoop_Trampoline = (EQ_FUNCTION_TYPE_MainLoop)DetourFunction((PBYTE)0x5473c3, (PBYTE)MainLoop_Detour);
-	// Prevent 'super speed' when in water
-	PatchT(0x0050BB31, (BYTE)0xB);
-	// Remove collision caused by invisible riderless horses
-	if (heqGfxMod)
+	// If Horses enabled: Turn on Horse Mechanic QoL
+	if (HorsesEnabled)
 	{
-		_t3dSetActorInvisible t3dSetActorInvisible = (_t3dSetActorInvisible)GetProcAddress(heqGfxMod, "t3dSetActorInvisible");
-		if (t3dSetActorInvisible)
-			t3dSetActorInvisible_Trampoline = (_t3dSetActorInvisible)DetourFunction((PBYTE)t3dSetActorInvisible, (PBYTE)t3dSetActorInvisible_Detour);
+		// Inertia
+		DetourFunction((PBYTE)0x520074, (PBYTE)EQPlayer_SetAccel_Detour);
+		// Duck
+		ExecuteCmd_Trampoline = (EQ_FUNCTION_TYPE_ExecuteCmd)DetourFunction((PBYTE)0x54050C, (PBYTE)ExecuteCmd_Detour);
+		// Tilt
+		ProcessPhysics_Trampoline = (EQ_FUNCTION_TYPE_ProcessPhysics)DetourFunction((PBYTE)0x54D964, (PBYTE)ProcessPhysics_Detour);
+		// Accurate Z-coord
+		PackPhysics_Trampoline = (EQ_FUNCTION_TYPE_PackPhysics)DetourFunction((PBYTE)0x4F224E, (PBYTE)PackPhysics_Detour);
+		PatchNopByRange(0x4DFBF0, 0x4DFBF5);
+		// Downward Pitch Control
+		MainLoop_Trampoline = (EQ_FUNCTION_TYPE_MainLoop)DetourFunction((PBYTE)0x5473c3, (PBYTE)MainLoop_Detour);
+		// Prevent horse super speed in water
+		EQPlayer_bodyEnvironmentChange_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer_bodyEnvironmentChange)DetourFunction((PBYTE)0x50BAED, (PBYTE)EQPlayer_bodyEnvironmentChange_Detour);
+	}
+
+	// If Horses disabled: Turn on AK Mechanic QoL
+	if (!HorsesEnabled)
+	{
+		// Prevent inivisbile horse collision
+		CDisplay__CreatePlayerActor_Trampoline = (EQ_FUNCTION_TYPE_CDisplay__CreatePlayerActor)DetourFunction((PBYTE)0x4ADF2C, (PBYTE)CDisplay__CreatePlayerActor_Detour);
 	}
 }
 
@@ -2617,9 +2499,6 @@ std::vector<std::pair<std::string, std::string>> readChrTextFile(const std::stri
 std::map<unsigned int, RaceData> race_gender_to_tag_map;
 std::map<std::string, std::string> race_fallback_tags;
 
-bool UseClassicFrogloks = true;
-bool UseLuclinFrogloks = false;
-
 void PutCustomRaceData(int race, int gender, std::string actor_tag, std::string fallback_anim_actor_tag)
 {
 	unsigned int key = (race << 8) | gender;
@@ -2668,82 +2547,6 @@ int __fastcall EQPlayer_GetActorTag_Detour(EQSPAWNINFO* this_ptr, void* not_used
 	return res;
 }
 
-typedef int(__thiscall* EQ_FUNCTION_TYPE_EQPlayer__SetSounds)(EQSPAWNINFO* this_ptr);
-EQ_FUNCTION_TYPE_EQPlayer__SetSounds EQPlayer__SetSounds_Trampoline;
-int __fastcall EQPlayer__SetSounds_Detour(EQSPAWNINFO* this_ptr, int unused)
-{
-	if (this_ptr->Race == 330 || (IsPlayerOrPlayerCorpse(this_ptr) && IsFroglokRace(this_ptr->Race)))
-	{
-		WORD orig_race = this_ptr->Race;
-		BYTE orig_gender = this_ptr->Gender;
-		this_ptr->Race = 26;
-		this_ptr->Gender = 2;
-		int result = EQPlayer__SetSounds_Trampoline(this_ptr);
-		this_ptr->Race = orig_race;
-		this_ptr->Gender = orig_gender;
-		return result;
-	}
-	else
-	{
-		return EQPlayer__SetSounds_Trampoline(this_ptr);
-	}
-}
-
-typedef void(__thiscall* EQ_FUNCTION_TYPE_EQPlayer__ChangeForm)(EQSPAWNINFO* this_ptr, Illusion_Struct* illusion);
-EQ_FUNCTION_TYPE_EQPlayer__ChangeForm EQPlayer__ChangeForm_Trampoline;
-void __fastcall EQPlayer__ChangeForm_Detour(EQSPAWNINFO* this_ptr, void* unused, Illusion_Struct* illusion)
-{
-#ifdef RACE_LOGGING
-	print_chat("[ChangeForm] Called with %u/%u", illusion->race, illusion->gender);
-#endif
-	if (IsPlayerOrPlayerCorpse(this_ptr))
-	{
-		if (IsFroglokRace(illusion->race))
-		{
-			if (IsCustomFroglokSupported())
-			{
-#ifdef RACE_LOGGING
-				print_chat("[ChangeForm] Overriding froglok illusion race:%u gender:%u texture:%u face:%u", illusion->race, illusion->gender, illusion->texture, illusion->face);
-#endif
-				illusion->race = 330; // PC's will always use RaceID 330 when becoming a Froglok.
-				illusion->texture = 0xFF; // Enable texture swapping.
-				if (UseClassicFrogloks)
-				{
-					illusion->face = 0;
-				}
-				if (illusion->gender == 2)
-				{
-					if (this_ptr->CharInfo && (BYTE)this_ptr->CharInfo->Gender <= 1)
-					{
-#ifdef RACE_LOGGING
-						print_chat("[ChangeForm] Using gender %u from CharInfo", this_ptr->CharInfo->Gender);
-#endif
-						illusion->gender = (BYTE)this_ptr->CharInfo->Gender;
-					}
-					else
-					{
-#ifdef RACE_LOGGING
-						print_chat("[ChangeForm] Using gender %u from SpawnInfo", this_ptr->Gender);
-#endif
-						illusion->gender = this_ptr->Gender == 1 ? 1 : 0;
-					}
-				}
-			}
-			else
-			{
-#ifdef RACE_LOGGING
-				print_chat("[ChangeForm] Froglok not loaded, using illusion as-is");
-#endif
-			}
-
-		}
-	}
-#ifdef RACE_LOGGING
-	print_chat("[ChangeForm] Apply with %u/%u", illusion->race, illusion->gender);
-#endif
-	EQPlayer__ChangeForm_Trampoline(this_ptr, illusion);
-}
-
 typedef char(__stdcall* EQ_FUNCTION_TYPE_CDisplay__GetAlternateAnimTag)(char* Source, char* Destination, char a3);
 EQ_FUNCTION_TYPE_CDisplay__GetAlternateAnimTag CDisplay__GetAlternateAnimTag_Trampoline;
 char __stdcall CDisplay__GetAlternateAnimTag_Detour(char* Source, char* Destination, char a3)
@@ -2758,31 +2561,6 @@ char __stdcall CDisplay__GetAlternateAnimTag_Detour(char* Source, char* Destinat
 		}
 	}
 	return CDisplay__GetAlternateAnimTag_Trampoline(Source, Destination, a3);
-}
-
-typedef int(__thiscall* EQ_FUNCTION_TYPE_EQ_Character__InitInnates)(EQCHARINFO* this_ptr, unsigned __int16 Race, unsigned __int16 Class);
-EQ_FUNCTION_TYPE_EQ_Character__InitInnates EQ_Character__InitInnates_Trampoline;
-int __fastcall EQ_Character__InitInnates_Detour(EQCHARINFO* this_ptr, unsigned int unused, __int16 Race, unsigned __int16 Class)
-{
-	if (this_ptr && this_ptr == EQ_OBJECT_CharInfo)
-	{
-		if (Race == 60)
-		{
-			// Makes 'Standard Skeleton' & 'Iksar Skeleton' both have the same infravision.
-			// Since we cosmetically swap skeleton models for Necro/AoN buffs on Quarm, let's avoid
-			// having a gameplay advantage on one race over the other.
-			Race = 161;
-		}
-		else if (IsFroglokRace(Race))
-		{
-			// Game is inconsistent with the innates of frogloks between (26, 27, 330), so map them all to the same one
-			// 26 - infravision
-			// 27 - missing
-			// 330 - infravision, regen
-			Race = 26;
-		}
-	}
-	return EQ_Character__InitInnates_Trampoline(this_ptr, Race, Class);
 }
 
 int __cdecl CityCanStart_Detour(int a1, int a2, int a3, int a4) {
@@ -3972,7 +3750,6 @@ constexpr BYTE kMaterialSlotChest = 1;
 constexpr BYTE kMaterialSlotArms = 2;
 constexpr BYTE kMaterialSlotLegs = 5;
 constexpr BYTE kMaterialSlotPrimary = 7;
-constexpr BYTE kMaterialSlotSecondary = 8; // Shared with 'ranged'
 
 constexpr WORD kMaterialNone = 0;
 constexpr WORD kMaterialLeather = 1;
@@ -4007,80 +3784,6 @@ bool UseEruditeFemaleFix = false;
 bool UseWoodElfFemaleFix = false;
 bool UseDarkElfFemaleFix = false;
 
-// Customized implementation of SetDagSpriteTint that uses the upper 8 bits of the color value as a bitmask.
-// This bitmask selectively controls which parts of the item are tinted (bitmask for the item's material palette).
-// Supports up to 8 materials to selectively tint (enough for nearly all weapons/shields)
-// - 0x00 or 0xFF in the mask field count as 'all'.
-// - Define 'TINT_LOGGING' to see debug output.
-int SetDagSpriteTintByMask(EQDAGINFO* dag, DWORD color)
-{
-	if (!dag)
-		return 0;
-
-	int* DagSprite = Graphics::t3dGetDagSprite(dag);
-	if (!DagSprite)
-		return 0;
-
-	if (DagSprite[0] == 20)
-		DagSprite = Graphics::s3dGetSkinAttachedToHierarchicalSprite(0, DagSprite);
-	else if (DagSprite[0] != 72)
-		return 0;
-
-	if (!DagSprite)
-		return 0;
-
-	int* DMSpriteMaterialPalette = Graphics::s3dGetDMSpriteMaterialPalette(DagSprite);
-	if (!DMSpriteMaterialPalette)
-		return 0;
-
-	int numEntries = DMSpriteMaterialPalette[5];
-
-	// The actual color to use when tinting
-	DWORD rgb = (color & 0x00FFFFFF);
-	if (rgb == 0 || rgb == 0x00FFFFFF)
-	{
-		// No tint
-		color = 0x00FFFFFF;
-		rgb = 0x00FFFFFF;
-	}
-
-	// Mask selects which materials on the item will be tinted by bit index (0x00 and 0xFF mean 'all')
-	DWORD mask = (color >> 24) & 0xFF;
-	if (mask == 0xFF || mask == 0)
-		mask = 0xFFFFFFFF;
-
-#ifdef TINT_LOGGING
-	print_chat("mask is %08x numEntries %i", mask, numEntries);
-#endif
-
-	for (int i = 0; i < numEntries; i++)
-	{
-
-#ifdef TINT_LOGGING
-		int* mpEntry = reinterpret_cast<int* (__cdecl*)(int, int*, int)>(*(int*)0x7F9838)(Graphics::GetDisplay()[1], DMSpriteMaterialPalette, i);
-		if (mpEntry)
-		{
-			DWORD* colors = (DWORD*)DMSpriteMaterialPalette[7];
-			DWORD color = colors ? colors[i] : 0;
-			char buf[64];
-			Graphics::t3dGetObjectTag(mpEntry, buf);
-			print_chat("Material[%i] = %s, color %08x", i, buf, color);
-		}
-#endif
-
-		DWORD test = (1 << i);
-		if ((mask & test) == test)
-		{
-#ifdef TINT_LOGGING
-			print_chat("tinting slot %i to %08x", i, rgb);
-#endif
-			Graphics::s3dSetMaterialPaletteEntryTint(DMSpriteMaterialPalette, i, &rgb);
-			DMSpriteMaterialPalette[8] = 1;
-		}
-	}
-	return 1;
-}
-
 // Helper function. Converts Velious Helms to their common values.
 // We only send the canonical values to the server and other players.
 // - [5xx/6xx] -> [240] Swaps our racial Velious head model IT### back to the generic '240' value used by all Velious helms.
@@ -4093,18 +3796,12 @@ WORD ToCanonicalHelmMaterial(WORD material, WORD race)
 			// Vah Shir have their own material IDs when they equip leather/chain/plate helms, but no custom helm.
 		case 661: // VAH (F) Leather Helm
 		case 666: // VAH (M) Leather Helm
-		case 5841: // FRM Leather Helm
-		case 5871: // FRF Leather Helm
 			return kMaterialLeather; // (1)
 		case 662: // VAH (F) Chain Helm
 		case 667: // VAH (M) Chain Helm
-		case 5842: // FRM Chain Helm
-		case 5872: // FRF Chain Helm
 			return kMaterialChain; // (2)
 		case 663: // VAH (F) Plate Helm
 		case 668: // VAH (M) Plate Helm
-		case 5843: // FRM Plate Helm
-		case 5873: // FRF Plate Helm
 			return kMaterialPlate; // (3)
 
 			// Converts all the race-specific Velious Helm IT### numbers to the common 240 value
@@ -4271,7 +3968,8 @@ void __fastcall WearChangeArmor_Detour(int* cDisplay, int unused_edx, EQSPAWNINF
 		block_wearchange = 1;
 
 		// Update tint cache (This line is needed for character select scren tints)
-		EQPlayer::SaveMaterialColor(entity, wear_slot, colors);
+		if (wear_slot < kMaterialSlotPrimary)
+			EQPlayer::SaveMaterialColor(entity, wear_slot, colors);
 	}
 
 	block_outbound_wearchange += block_wearchange;
@@ -4286,11 +3984,10 @@ int __fastcall CDisplay__HandleMaterialEx_4A1EB7(CDisplay* this_ptr, int unused,
 #ifdef RACE_LOGGING
 	print_chat("HandleMaterialEx slot=%i new=%i old=%i", wear_slot, new_material, old_material);
 #endif
-	// Classic Frogloks don't have velious textures (yet)
 	// Luclin Models don't have working Velious textures.
 	WORD orig_new_material = new_material;
 	bool is_armor = entity->Texture == 0xFF && wear_slot > 0 && wear_slot < kMaterialSlotPrimary;
-	if (is_armor && (IsFroglokRace(entity->Race) || IsLuclinModel(entity) || entity->Race == 130))
+	if (is_armor && (IsLuclinModel(entity) || entity->Race == 130))
 	{
 		new_material = ToNonVeliousArmorMaterial(new_material, entity->Class);
 		old_material = ToNonVeliousArmorMaterial(old_material, entity->Class);
@@ -4302,50 +3999,6 @@ int __fastcall CDisplay__HandleMaterialEx_4A1EB7(CDisplay* this_ptr, int unused,
 	if (is_armor && result == 1 && orig_new_material != new_material && entity->EquipmentMaterialType[wear_slot] == new_material)
 		entity->EquipmentMaterialType[wear_slot] = orig_new_material;
 
-	// Fix some Robe stuff on Luclin Frogloks:
-	if (is_armor && IsFroglokRace(entity->Race) && IsLuclinModel(entity))
-	{
-		if (wear_slot == kMaterialSlotChest)
-		{
-			// When removing a robe, uploads the loin cloth back to the legs material
-			bool removed_robe = (new_material < 10 || new_material > 16) && (old_material >= 10 && old_material <= 16);
-			if (removed_robe)
-			{
-				WORD legs_material = entity->EquipmentMaterialType[kMaterialSlotLegs];
-				WORD tmp_legs_material = ToNonVeliousArmorMaterial(legs_material, entity->Class);
-				int r1 = CDisplay__HandleMaterialEx_Trampoline(
-					this_ptr,
-					entity,
-					kMaterialSlotLegs,
-					tmp_legs_material,
-					tmp_legs_material,
-					entity->EquipmentMaterialColor[kMaterialSlotLegs],
-					face);
-
-				if (r1 == 1 && legs_material != tmp_legs_material && entity->EquipmentMaterialType[kMaterialSlotLegs] == tmp_legs_material)
-					entity->EquipmentMaterialType[kMaterialSlotLegs] = legs_material;
-			}
-		}
-		else if (wear_slot == kMaterialSlotLegs)
-		{
-			// When swapping pants while wearing a robe, make sure the robe graphic stays as the lion cloth texture.
-			WORD chest_material = entity->EquipmentMaterialType[kMaterialSlotChest];
-			if (chest_material >= 10 && chest_material <= 16)
-			{
-				// This will call our ReplaceMaterial hook, which will overwrite the loin cloth with the robe afterward
-				CDisplay__HandleMaterialEx_Trampoline(
-					this_ptr,
-					entity,
-					kMaterialSlotChest,
-					chest_material,
-					chest_material,
-					entity->EquipmentMaterialColor[kMaterialSlotChest],
-					face
-				);
-			}
-		}
-	}
-
 	return result;
 }
 
@@ -4354,37 +4007,22 @@ EQ_FUNCTION_TYPE_SwapModel SwapModel_Trampoline;
 int __fastcall SwapModel_Detour(int* cDisplay, int unused, EQSPAWNINFO* entity, BYTE wear_slot, char* ITstr, int from_server)
 {
 	int material = (ITstr && strlen(ITstr) > 2) ? atoi(&ITstr[2]) : 0;
-	bool is_weapon_slot = wear_slot == kMaterialSlotPrimary || wear_slot == kMaterialSlotSecondary;
-	bool is_tint_slot = is_weapon_slot || (wear_slot == kMaterialSlotHead && entity->Texture == 0xFF);
+	bool is_player_head = (wear_slot == kMaterialSlotHead && entity->Texture == 0xFF);
 
-	if (from_server == 0 && is_weapon_slot && entity == EQ_OBJECT_PlayerSpawn && EQ_OBJECT_CharInfo)
+	if (from_server == 0 && is_player_head && entity == EQ_OBJECT_PlayerSpawn && EQ_OBJECT_CharInfo)
 	{
 		// This is reached when an item was swapped by the user equipping a new item through the UI.
 		// We aren't given the color of the item in this scenario, so we have to look it up by matching the IT# to the equipped item in primary/secondary/range slot.
 		// In all other Scenarios, we already know the color because we got an OP_WearChange event, so we can skip this logic.
 		EQINVENTORY& inv = EQ_OBJECT_CharInfo->Inventory;
 		if (material == kMaterialNone)
-		{
 			EQPlayer::SaveMaterialColor(entity, wear_slot, kColorNone);
-		}
-		else if (wear_slot == kMaterialSlotPrimary)
-		{
-			EQPlayer::SaveMaterialColor(entity, wear_slot, inv.Primary ? inv.Primary->Common.Color : kColorNone);
-		}
-		else if (EQ_Item::GetItemMaterial(inv.Secondary) == material)
-		{
-			EQPlayer::SaveMaterialColor(entity, wear_slot, inv.Secondary ? inv.Secondary->Common.Color : kColorNone);
-		}
-		else if (EQ_Item::GetItemMaterial(inv.Ranged) == material)
-		{
-			EQPlayer::SaveMaterialColor(entity, wear_slot, inv.Ranged ? inv.Ranged->Common.Color : kColorNone);
-		}
 	}
 
 	int result = SwapModel_Trampoline(cDisplay, entity, wear_slot, ITstr, from_server);
 
 	// After models are swapped, apply tint to the Helm and Weapon slots.
-	if (material > kMaterialNone && is_tint_slot)
+	if (material > kMaterialNone && is_player_head)
 	{
 		DWORD color = entity->EquipmentMaterialColor[wear_slot];
 		DWORD tint = color == kColorNone ? kColorDefault : color;
@@ -4396,24 +4034,6 @@ int __fastcall SwapModel_Detour(int* cDisplay, int unused, EQSPAWNINFO* entity, 
 	}
 
 	return result;
-}
-
-// Callback for server WearChange packets. It immediately calls HandleWearChangeArmor for non-weapon slots.
-bool Handle_In_OP_WearChange(WearChange_Struct* wc)
-{
-	if (!wc)
-		return false;
-
-	EQSPAWNINFO* entity = EQPlayer::GetSpawn(wc->spawn_id);
-	if (!entity)
-		return false;
-
-	// Weapon color is not passed from OP_WearChange to any called method, so we have to save it from here.
-	if (wc->wear_slot_id == kMaterialSlotPrimary || wc->wear_slot_id == kMaterialSlotSecondary)
-	{
-		//EQPlayer::SaveMaterialColor(entity, wc->wear_slot_id, wc->color);
-	}
-	return false;
 }
 
 bool Handle_Out_OP_WearChange(WearChange_Struct* wc)
@@ -4440,7 +4060,7 @@ bool Handle_Out_OP_WearChange(WearChange_Struct* wc)
 	return false; // Continue processing this OP_WearChange, sending the message.
 }
 
-void ApplyTintAndHelmPatches()
+void ApplyHelmPatches()
 {
 	// GetVeliousHelmMaterialIT_4A1512(entity, material, *show_hair)
 	// - (1) Disables hair becoming invisible on the shared default head. Prevents "show_hair = false" happening with Velious helms.
@@ -4448,21 +4068,11 @@ void ApplyTintAndHelmPatches()
 	PatchNopByRange(0x4A16D2, 0x4A16D4); // '*show_hair = 0' -> No-OP
 	// - (2) Enables Velious Helms showing on Character Select. Prevents returning early if char_info is null.
 	PatchNopByRange(0x4A152B, 0x4A1533); // 'if (!char_info) return 3'; -> No-OP
-	PatchNopByRange(0x4A153E, 0x4A154B); // 'if ((char_info->Unknown0D3C & 0x1E) == 0) return 3;' -> No-OP
-
-	// ChangeDag()
-	// - Unlocks proper tinting for IT# model helms/weapons below IT# number 1000:
-	// - IT# models under ID 1000 used shared memory in their tint storage, so setting the tint on one model affected all models in the zone.
-	
-	//Disabled per request
-	//DWORD value1 = 1;
-	//PatchA((void*)(0x4B094E + 3), (const void*)&value1, sizeof(DWORD));
-	//PatchA((void*)(0x4B099E + 3), (const void*)&value1, sizeof(DWORD));
-	
+	PatchNopByRange(0x4A153E, 0x4A154B); // 'if ((char_info->Unknown0D3C & 0x1E) == 0) return 3;' -> No-OP	
 }
 
 // ---------------------------------------------------------------------------------------
-// Tint Support [End]
+// Buggy Helmet Fixes [End]
 // ---------------------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------------------
@@ -5347,18 +4957,6 @@ void PatchCheckLoreConflict()
 // Bank Improvements [end]
 // ---------------------------------------------------------------------------------------
 
-typedef int(__thiscall* EQ_FUNCTION_TYPE_CDisplay__InitWorld)(CDisplay* this_ptr);
-EQ_FUNCTION_TYPE_CDisplay__InitWorld CDisplay__InitWorld_Trampoline;
-int __fastcall CDisplay__InitWorld_4A44F4(CDisplay* this_ptr, int unused)
-{
-	if (UseLuclinFrogloks)
-	{
-		BYTE* byte_ptr = (BYTE*)this_ptr;
-		byte_ptr[0xA0] = 1; // This flag is set during InitWorld if any Luclin models are enabled
-	}
-	return CDisplay__InitWorld_Trampoline(this_ptr);
-}
-
 DWORD gmfadress = 0;
 DWORD wpsaddress = 0;
 DWORD swAddress = 0;
@@ -5463,21 +5061,6 @@ void CheckClientMiniMods()
 	}
 
 	g_bSongWindowAutoHide = GetEQClientIniFlag_55B947("Defaults", "SongWindowAutoHide", "FALSE");
-
-	if (GetEQClientIniFlag_55B947("Defaults", "UseLuclinFroglok", "FALSE"))
-	{
-		UseClassicFrogloks = false;
-		UseLuclinFrogloks = true;
-	}
-	else
-	{
-		UseClassicFrogloks = true;
-		UseLuclinFrogloks = false;
-		PutCustomRaceData(330, 0, "FKM", "");
-		// PutCustomRaceData(330, 1, "FKF", "FKM"); // TODO: We don't have FKF created yet. Use FKM for now.
-		PutCustomRaceData(330, 1, "FKM", "");
-		PutCustomRaceData(330, 2, "FKM", "");
-	}
 
 	if (GetEQClientIniFlag_55B947("Defaults", "UnlockVeliousTextures", "FALSE"))
 	{
@@ -5593,23 +5176,14 @@ void InitHooks()
 	EQMACMQ_REAL_CBuffWindow__PostDraw = (EQ_FUNCTION_TYPE_CBuffWindow__PostDraw)DetourFunction((PBYTE)EQ_FUNCTION_CBuffWindow__PostDraw, (PBYTE)EQMACMQ_DETOUR_CBuffWindow__PostDraw);
 	EQMACMQ_REAL_EQ_Character__CastSpell = (EQ_FUNCTION_TYPE_EQ_Character__CastSpell)DetourFunction((PBYTE)EQ_FUNCTION_EQ_Character__CastSpell, (PBYTE)EQMACMQ_DETOUR_EQ_Character__CastSpell);
 	heqwMod = GetModuleHandle("eqw.dll");
-	LegalPlayerRace_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__LegalPlayerRace)DetourFunction((PBYTE)0x0050BD9D, (PBYTE)LegalPlayerRace_Detour);
 	EQZoneInfo_Ctor_Trampoline = (EQ_FUNCTION_TYPE_EQZoneInfo__EQZoneInfo)DetourFunction((PBYTE)0x005223C6, (PBYTE)EQZoneInfo_Ctor_Detour);
 	EQPlayer_GetActorTag_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer_GetActorTag)DetourFunction((PBYTE)0x0050845D, (PBYTE)EQPlayer_GetActorTag_Detour);
-	EQPlayer__ChangeForm_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__ChangeForm)DetourFunction((PBYTE)0x5074FA, (PBYTE)EQPlayer__ChangeForm_Detour);
 	CDisplay__GetAlternateAnimTag_Trampoline = (EQ_FUNCTION_TYPE_CDisplay__GetAlternateAnimTag)DetourFunction((PBYTE)0x4D8065, (PBYTE)CDisplay__GetAlternateAnimTag_Detour);
-	EQ_Character__InitInnates_Trampoline = (EQ_FUNCTION_TYPE_EQ_Character__InitInnates)DetourFunction((PBYTE)0x4BD4F5, (PBYTE)EQ_Character__InitInnates_Detour);
-	EQPlayer__SetSounds_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__SetSounds)DetourFunction((PBYTE)0x50C2C9, (PBYTE)EQPlayer__SetSounds_Detour);
-	CDisplay__InitWorld_Trampoline = (EQ_FUNCTION_TYPE_CDisplay__InitWorld)DetourFunction((PBYTE)0x4A44F4, (PBYTE)CDisplay__InitWorld_4A44F4);
 
 	// Horse Support
 	ApplyHorseQolPatches(heqGfxMod);
 	
-	// Frogs and some luclin related fixes
-	ApplyFroglokSupport();
-	CDisplay__ReplaceMaterial_Trampoline = (EQ_FUNCTION_TYPE_CDisplay__ReplaceMaterial)DetourFunction((PBYTE)0x4A0A95, (PBYTE)CDisplay__ReplaceMaterial_Detour);
-	EQPlayer__GetRaceOffsetForAttachmentITs_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__GetRaceOffsetForAttachmentITs)DetourFunction((PBYTE)0x49F7C7, (PBYTE)EQPlayer__GetRaceOffsetForAttachmentITs_49F7C7);
-	PickEyeColor_Trampoline = (EQ_FUNCTION_TYPE_PickEyeColor)DetourFunction((PBYTE)0x4A0792, (PBYTE)PickEyeColor_4A0792);
+	// Buggy Armor Material Fixes
 	CDisplay__SetDefaultITAttachments_Trampoline = (EQ_FUNCTION_TYPE_CDisplay__SetDefaultITAttachments)DetourFunction((PBYTE)0x4A02E8, (PBYTE)CDisplay__SetDefaultITAttachments_4A02E8);
 	CDisplay__HandleMaterialEx_Trampoline = (EQ_FUNCTION_TYPE_CDisplay__HandleMaterialEx)DetourFunction((PBYTE)0x4A1EB7, (PBYTE)CDisplay__HandleMaterialEx_4A1EB7);
 
@@ -5643,11 +5217,11 @@ void InitHooks()
 	CleanUpUICallbacks.push_back(ShortBuffWindow_CleanUI);
 	DeactivateUICallbacks.push_back(ShowBuffWindow_DeactivateUI);
 
-	// Appearance / Tint Support
+	// Buggy Velious Helmet fixes
 	SwapHead_Trampoline = (EQ_FUNCTION_TYPE_SwapHead)DetourFunction((PBYTE)0x4A1735, (PBYTE)SwapHead_Detour);
 	SwapModel_Trampoline = (EQ_FUNCTION_TYPE_SwapModel)DetourFunction((PBYTE)0x4A9EB3, (PBYTE)SwapModel_Detour);
 	WearChangeArmor_Trampoline = (EQ_FUNCTION_TYPE_WearChangeArmor)DetourFunction((PBYTE)0x4A2A7A, (PBYTE)WearChangeArmor_Detour);
-	ApplyTintAndHelmPatches();
+	ApplyHelmPatches();
 
 	// Mesmerization Stun Duration fix
 	ApplyMesmerizationFixes();
