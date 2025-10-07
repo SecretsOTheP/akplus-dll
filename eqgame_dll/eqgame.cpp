@@ -2178,6 +2178,68 @@ static void* __fastcall CDisplay__CreatePlayerActor_Detour(int* this_ptr, int u,
 	return CDisplay__CreatePlayerActor_Trampoline(this_ptr, entity);
 }
 
+typedef int(__cdecl* EQ_FUNCTION_TYPE_ProcessUpdateStats)(short* stats_update);
+EQ_FUNCTION_TYPE_ProcessUpdateStats ProcessUpdateStats_Trampoline;
+static int __cdecl ProcessUpdateStats_Detour(short* stats_update) {
+	int result = ProcessUpdateStats_Trampoline(stats_update);
+	if (result != 1) return result;
+
+	// When another player is mounted, the client intercepts the OP_MobUpdate
+	// targeting the other player spawn id and updates their mount entity, not the
+	// player entity. This process includes the UpdatePlayerActor() call which
+	// updates the mount. For some reason that UpdatePlayerActor() has code to
+	// update a riders's mount to match the rider but not vice versa. As a result
+	// the other player entity position and view actor location are both left
+	// behind at the mount point until the client player gets close enough to that
+	// stuck point so they are added to the world actors list (less than a
+	// distance of 600). This results in client targeting and spell distance check
+	// bugs (heals failing, etc) on a mounted other player next to the client
+	// player until that sync happens.
+
+	// This patch copies the logic in process_physics when the players are within
+	// the world visible actors list to sync the rider entity position and actor
+	// info floor height with the horse mount.
+	short spawn_id = *stats_update;
+	EQSPAWNINFO* entity = EQPlayer::GetSpawn(spawn_id);
+	// First filter to only apply to other players with valid actorinfo.
+	if (!entity || entity->Type != 0 || entity == EQ_OBJECT_PlayerSpawn ||
+			!entity->ActorInfo)
+		return 1;
+
+	// And then further restrict to horse mounted other players.
+	EQSPAWNINFO* mount = entity->ActorInfo->Mount;
+	if (!mount || mount->Race != 0xd8 || !mount->ActorInfo) return 1;
+
+	// Keep the player entity and actorinfo floor height in sync with the mount.
+	// This is redundant with process_physics when the other player is within
+	// view.
+	entity->Y = mount->Y;
+	entity->X = mount->X;
+	entity->Z = mount->Z + mount->ModelHeightOffset + 	1.0;  // Shortcut approx.
+	entity->Heading = mount->Heading;
+	entity->MovementSpeed = 0.0f;
+	entity->MovementSpeedY = 0.0f;
+	entity->MovementSpeedX = 0.0f;
+	entity->MovementSpeedZ = 0.0f;
+	entity->MovementSpeedHeading = 0.0f;
+	entity->ActorInfo->Z = mount->ActorInfo->Z;
+
+	// Additionally we need to update the actor location to also be in sync or
+	// things like the visible actors list and spell effects from a heal won't
+	// work properly.
+	int world = Graphics::GetDisplay() ? Graphics::GetDisplay()[1] : 0;
+	int t3dSetActorLocationAddr = *(int*)(0x007f9ac4);
+	_EQACTORINSTANCEINFO* actor_instance = entity->ActorInfo->ActorInstance;
+	if (world && t3dSetActorLocationAddr && actor_instance) {
+		float location[6] = {entity->Y, entity->X, entity->Z,
+													entity->Heading, entity->Pitch, 0};
+		((void(__cdecl*)(int, _EQACTORINSTANCEINFO*,float*))t3dSetActorLocationAddr)
+													(world, actor_instance, location);
+	}
+
+	return 1;
+}
+
 void ApplyHorseQolPatches(HINSTANCE heqGfxMod)
 {
 	HorsesEnabled = GetEQClientIniFlag_55B947("Defaults", "UseLuclinElementals", "TRUE") && GetEQClientIniFlag_55B947("Defaults", "UseLuclinHorses", "TRUE");
@@ -2189,6 +2251,8 @@ void ApplyHorseQolPatches(HINSTANCE heqGfxMod)
 	{
 		// Inertia
 		DetourFunction((PBYTE)0x520074, (PBYTE)EQPlayer_SetAccel_Detour);
+		// Synchronize rider / mount position
+		ProcessUpdateStats_Trampoline =	(EQ_FUNCTION_TYPE_ProcessUpdateStats)DetourFunction((PBYTE)0x004dbcf5, (PBYTE)ProcessUpdateStats_Detour);
 		// Duck
 		ExecuteCmd_Trampoline = (EQ_FUNCTION_TYPE_ExecuteCmd)DetourFunction((PBYTE)0x54050C, (PBYTE)ExecuteCmd_Detour);
 		// Tilt
