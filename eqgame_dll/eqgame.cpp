@@ -945,7 +945,7 @@ DETOUR_TRAMPOLINE_EMPTY(unsigned char Eqmachooks::CEverQuest__HandleWorldMessage
 DETOUR_TRAMPOLINE_EMPTY(int Eqmachooks::CEQMusicManager__Set_Trampoline(int, int, int, int, int, int, int, int, int));
 DETOUR_TRAMPOLINE_EMPTY(int Eqmachooks::CEQMusicManager__Play_Trampoline(int, int));
 DETOUR_TRAMPOLINE_EMPTY(int Eqmachooks::CEQMusicManager__WavPlay_Trampoline(int, int));
-DETOUR_TRAMPOLINE_EMPTY(int CEverQuest__DisplayScreen_Trampoline(DWORD*, unsigned, char *));
+DETOUR_TRAMPOLINE_EMPTY(int __fastcall CEverQuest__DisplayScreen_Trampoline(DWORD*, unsigned, char *));
 DETOUR_TRAMPOLINE_EMPTY(DWORD WINAPI GetModuleFileNameA_tramp(HMODULE,LPTSTR,DWORD));
 DETOUR_TRAMPOLINE_EMPTY(DWORD WINAPI WritePrivateProfileStringA_tramp(LPCSTR,LPCSTR,LPCSTR, LPCSTR));
 DETOUR_TRAMPOLINE_EMPTY(int __cdecl SendExeChecksum_Trampoline(void));
