@@ -2,9 +2,9 @@
 #include <stdio.h>
 #include "common.h"
 
-HWND EQhWnd = 0;
-HMODULE heqwMod = 0;
-DWORD heqwModoff = 0;
+#pragma warning( disable : 4996)  // Disable warnings about not using _s version of functions.
+
+static HWND* EQhWnd = reinterpret_cast<HWND*>(0x00807e04);
 DWORD gFG_MAX=60;
 DWORD SleepFG = 16;
 DWORD SleepBG = 32;
@@ -22,17 +22,6 @@ DWORD FrameTime=0;
 DWORD LastSleep=0;
 bool frame_limiter = false;
 bool was_background = true;
-int __cdecl InitKeys(int a1);
-FUNCTION_AT_ADDRESS(int __cdecl InitKeys(int a1),0x55B7BC);
-signed int FlushMouse();
-FUNCTION_AT_ADDRESS(signed int FlushMouse(),0x55B5B9);
-
-PMOUSECLICK EQADDR_MOUSECLICK=(PMOUSECLICK)0x798614;
-
-BOOL gMouseLeftClickInProgress = FALSE;
-BOOL gMouseRightClickInProgress = FALSE;
-
-POINT savedRMousePos = POINT();
 
 #define FPS_ABSOLUTE  0
 #define FPS_CALCULATE 1
@@ -72,23 +61,6 @@ void LoadIniSettings()
 		WritePrivateProfileStringA("Options", "UseFPSLimiter", szDefaultFpsLimiter, "./eqclient.ini");
 	}
 	frame_limiter = (bool)(atoi(szResultFpsLimiter));
-}
-
-void SetEQhWnd()
-{
-	EQhWnd=*(HWND*)EQADDR_HWND;
-	//lets check if they are using eqw if so, we need that window instad... -eqmule
-	if (heqwMod) {
-		//MessageBox(NULL, "Set EQ HWND", NULL, MB_OK);
-		//DWORD GetEQWHWND=(DWORD)heqwMod+0x12C0; // eqw-2.35a
-		DWORD GetEQWHWND=(DWORD)heqwMod+0x1670; // 0x1670 eqw-2.32 beta
-		__asm {
-			push eax;
-			call [GetEQWHWND];
-			mov [EQhWnd], eax;
-			pop eax;
-		};
-	}
 }
 
 VOID ProcessFrame()
@@ -169,16 +141,6 @@ void Pulse()
 {
 	*(DWORD*)0x008063D0 = 0;
 
-	if (*(DWORD *)0x007985EA == 0x00010001) {
-		mouse_looking = true;
-	}
-	else
-	{
-		mouse_looking = false;
-	}
-
-	SetEQhWnd();
-
 
 	if (!frame_limiter)
 		return;
@@ -186,7 +148,7 @@ void Pulse()
 	ProcessFrame();
 
 
-	if (GetForegroundWindow() == EQhWnd) {
+	if (GetForegroundWindow() == *EQhWnd) {
 		CurMax = gFG_MAX;
 	}
 	if (CurMax > 0) {

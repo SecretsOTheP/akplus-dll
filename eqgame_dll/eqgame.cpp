@@ -18,6 +18,8 @@
 #include <functional>
 #include <vector>
 
+#pragma warning( disable : 4996)  // Disable warnings about not using _s version of functions.
+
 // Sent on zone entry to the server.
 // Server uses this to tell the user if they are out of date.
 // Increment if we make significant changes that we want to track.
@@ -40,27 +42,11 @@
 //#define TINT_LOGGING 1
 //#define BANK_LOGGING 1
 extern void Pulse();
-extern bool was_background;
 extern void LoadIniSettings();
-extern void SetEQhWnd();
-extern HMODULE heqwMod;
-extern HWND EQhWnd;
-HANDLE myproc = 0;
+static HWND* EQhWnd = reinterpret_cast<HWND*>(0x00807e04);
 bool title_set = false;
 std::string new_title("");
-bool first_maximize = true;
-bool can_fullscreen = false;
-bool ignore_right_click = false;
-bool ignore_right_click_up = false;
-bool ignore_left_click = false;
-bool ignore_left_click_up = false;
-DWORD focus_regained_time = 0;
 
-bool ResolutionStored = false;
-DWORD resx = 0;
-DWORD resy = 0;
-DWORD bpp = 0;
-DWORD refresh = 0;
 HMODULE eqmain_dll = 0;
 BOOL bExeChecksumrequested = 0;
 BOOL g_mouseWheelZoomIsEnabled = true;
@@ -71,9 +57,6 @@ bool window_info_stored = false;
 WINDOWPLACEMENT g_wpPrev = { sizeof(g_wpPrev) };
 bool start_fullscreen = false;
 bool startup = true;
-POINT posPoint;
-DWORD o_MouseEvents = 0x0055B3B9;
-DWORD o_MouseCenter = 0x0055B722;
 
 bool g_bEnableBrownSkeletons = false;
 bool g_bEnableExtendedNameplates = true;
@@ -91,12 +74,6 @@ typedef signed int(__cdecl* ProcessGameEvents_t)();
 ProcessGameEvents_t return_ProcessGameEvents;
 ProcessGameEvents_t return_ProcessMouseEvent;
 //ProcessGameEvents_t return_SetMouseCenter;
-
-DWORD d3ddev = 0;
-DWORD eqgfxMod = 0;
-BOOL bWindowedMode = true;
-
-BOOL RightHandMouse = true;
 
 // Callbacks run on zone
 std::vector<std::function<void()>> OnZoneCallbacks;
@@ -202,12 +179,12 @@ void UpdateTitle()
 		int i = 0;
 		do {
 			i++;
-			sprintf(str, "Client%d", i);
+			sprintf(str, "EQ%d", i);
 			cur = FindWindowA(NULL, str);
 		} while (cur != NULL);
 		new_title = str;
 	}
-	SetWindowTextA(EQhWnd, new_title.c_str());
+	SetWindowTextA(*EQhWnd, new_title.c_str());
 #ifdef LOGGING
 	std::string outlog_name(new_title);
 	outlog_name += ".log";
@@ -238,92 +215,6 @@ void print_chat(const char* format, ...)
 	vsnprintf(buffer, 511, format, argptr);
 	va_end(argptr);
 	print_chat_internal(*(int*)0x809478, buffer, 0, true);
-}
-
-void __cdecl ResetMouseFlags() {
-#ifdef LOGGING
-	WriteLog("EQGAME: Resetting Mouse Flags");
-#endif
-	DWORD ptr = *(DWORD *)0x00809DB4;
-	if (ptr)
-	{
-		*(BYTE*)(ptr + 85) = 0;
-		*(BYTE*)(ptr + 86) = 0;
-		*(BYTE*)(ptr + 87) = 0;
-		*(BYTE*)(ptr + 88) = 0;
-	}
-
-	*(DWORD*)0x00809320 = 0;
-	*(DWORD*)0x0080931C = 0;
-	*(DWORD*)0x00809324 = 0;
-	*(DWORD*)0x00809328 = 0;
-	*(DWORD*)0x0080932C = 0;
-}
-
-void __cdecl ProcessAltState() {
-	if(GetForegroundWindow() == EQhWnd)
-	{
-		if(GetAsyncKeyState(VK_MENU)&0x8000) // alt key is pressed
-		{
-			DWORD ptr = *(DWORD *)0x00809DB4;
-			if (ptr)
-			{
-				*(BYTE*)(ptr + 87) = 1;
-			}
-			*(DWORD*)0x00799740 = 1;
-			*(DWORD*)0x0080932C = 1;
-		}
-		else
-		{
-			DWORD ptr = *(DWORD *)0x00809DB4;
-			if (ptr)
-			{
-				*(BYTE*)(ptr + 87) = 0;
-			}
-			*(DWORD*)0x00799740 = 0;
-			*(DWORD*)0x0080932C = 0;
-		}
-		if (GetAsyncKeyState(VK_CONTROL) & 0x8000) // ctrl key is pressed
-		{
-			DWORD ptr = *(DWORD *)0x00809DB4;
-			if (ptr)
-			{
-				*(BYTE*)(ptr + 86) = 1;
-			}
-			*(DWORD*)0x0079973C = 1;
-			*(DWORD*)0x00809320 = 1;
-		}
-		else
-		{
-			DWORD ptr = *(DWORD *)0x00809DB4;
-			if (ptr)
-			{
-				*(BYTE*)(ptr + 86) = 0;
-			}
-			*(DWORD*)0x0079973C = 0;
-			*(DWORD*)0x00809320 = 0;
-		}
-		if (GetAsyncKeyState(VK_SHIFT) & 0x8000) // shift key is pressed
-		{
-			DWORD ptr = *(DWORD *)0x00809DB4;
-			if (ptr)
-			{
-				*(BYTE*)(ptr + 85) = 1;
-			}
-			*(DWORD*)0x00799738 = 1;
-			*(DWORD*)0x0080931C = 1;
-		}
-		else
-		{
-			DWORD ptr = *(DWORD *)0x00809DB4;
-			if (ptr)
-			{
-				*(BYTE*)(ptr + 85) = 0;
-			}
-			*(DWORD*)0x00799738 = 0;
-			*(DWORD*)0x0080931C = 0;
-		}
-	}
 }
 
 void AddDetourf(DWORD address, ...)
@@ -502,7 +393,7 @@ bool __cdecl GetLabelFromEQ_Detour(int EqType, PEQCXSTR* str, bool* override_col
 
 bool g_bEnableClassicMusic = false;
 
-int g_LastMusicStop = 0;
+DWORD g_LastMusicStop = 0;
 int g_curMusicTrack = 2;
 int g_curGlobalMusicTrack = 0;
 bool bIsWaterPlaying = false;
@@ -704,221 +595,10 @@ public:
 				}
 			}
 		}*/
-		else if (Opcode == 0x41d8) { // OP_LogServer=0xc341
-			can_fullscreen = true;
-#ifdef LOGGING
-			WriteLog("EQGAME: CEverQuest__HandleWorldMessage_Detour OP_LogServer=0xc341 Can go Fullscreen (1)");
-#endif
-		}
+
 		return CEverQuest__HandleWorldMessage_Trampoline(con,Opcode,Buffer,len);
 	}
 
-	int __cdecl  CDisplay__Process_Events_Trampoline();
-	int __cdecl  CDisplay__Process_Events_Detour(){
-		if (EQ_OBJECT_CEverQuest != NULL && EQ_OBJECT_CEverQuest->GameState > 0 && EQ_OBJECT_CEverQuest->GameState != 255 && can_fullscreen) {
-			SetEQhWnd();
-			ProcessAltState();
-			if (!ResolutionStored && *(DWORD*)(0x007F97D0) != 0)
-			{
-				DWORD ptr = *(DWORD*)(0x007F97D0);
-
-				resx = *(DWORD*)(ptr + 0x7A28);
-				resy = *(DWORD*)(ptr + 0x7A2C);
-				bpp = *(DWORD*)(ptr + 0x7A20);
-				refresh = *(DWORD*)(ptr + 0x7A30);
-
-				ResolutionStored = true;
-				eqgfxMod = *(DWORD*)(0x007F9C50);
-				d3ddev = (DWORD)(eqgfxMod + 0x00A4F92C);
-#ifdef LOGGING
-				std::string outstring;
-				outstring = "EQGAME: Resolution Stored: resx = ";
-				outstring += std::to_string(resx);
-				outstring += " resy = ";
-				outstring += std::to_string(resy);
-				outstring += " bbp = ";
-				outstring += std::to_string(bpp);
-				outstring += " refresh = ";
-				outstring += std::to_string(refresh);
-				WriteLog(outstring);
-#endif
-			}
-			
-			if (ResolutionStored && startup && GetForegroundWindow() == EQhWnd && !IsIconic(EQhWnd)) {
-#ifdef LOGGING
-				WriteLog("EQGAME: Startup - Storing window info");
-#endif
-				GetWindowInfo(EQhWnd, &stored_window_info);
-				window_info_stored = true;
-				startup = false;
-				/*
-				MONITORINFO monitor_info;
-				monitor_info.cbSize = sizeof(monitor_info);
-				GetMonitorInfo(MonitorFromWindow(EQhWnd, MONITOR_DEFAULTTONEAREST),
-					&monitor_info);
-				RECT window_rect(monitor_info.rcMonitor);
-				DWORD monitor_x = window_rect.right - window_rect.left;
-				DWORD monitor_y = window_rect.bottom - window_rect.top;
-				if (monitor_x != resx || monitor_y != resy) {
-					// Monitor resolution does not match game resolution
-					// block initial going full screen in auto mode
-					start_fullscreen = false;
-					WriteLog("Startup - Monitor resolution does not match game - blocking auto full screen");
-				}
-#ifdef LOGGING
-				std::string outstring;
-				outstring = "Monitor Info: resx = ";
-				outstring += std::to_string(monitor_x);
-				outstring += " resy = ";
-				outstring += std::to_string(monitor_y);
-				WriteLog(outstring);
-#endif
-
-				*/
-
-			}
-			if (start_fullscreen && bWindowedMode && GetForegroundWindow() == EQhWnd && !IsIconic(EQhWnd)) {
-				// This takes if fullscreen initially
-#ifdef LOGGING
-				WriteLog("EQGAME: Going Fullscreen (1)");
-#endif
-				if (!window_info_stored) {
-#ifdef LOGGING
-					WriteLog("EQGAME: Storing Window Info (1)");
-#endif
-					GetWindowInfo(EQhWnd, &stored_window_info);
-					window_info_stored = true;
-				}
-				// MessageBox(NULL, "Going Full Screen", NULL, MB_OK);
-				SetWindowLong(EQhWnd, GWL_STYLE,
-					stored_window_info.dwStyle & ~(WS_CAPTION | WS_THICKFRAME | WS_SYSMENU));
-
-				SetWindowLong(EQhWnd, GWL_EXSTYLE,
-					stored_window_info.dwExStyle & ~(WS_EX_DLGMODALFRAME |
-						WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE));
-
-				MONITORINFO monitor_info;
-				monitor_info.cbSize = sizeof(monitor_info);
-				GetMonitorInfo(MonitorFromWindow(EQhWnd, MONITOR_DEFAULTTONEAREST),
-					&monitor_info);
-				RECT window_rect(monitor_info.rcMonitor);
-
-				WINDOWPLACEMENT window_placement;
-				window_placement.length = sizeof(window_placement);
-				
-				if (first_maximize) {
-					GetWindowPlacement(EQhWnd, &window_placement);
-					window_placement.showCmd = SW_MINIMIZE;
-					SetWindowPlacement(EQhWnd, &window_placement);
-					window_placement.showCmd = SW_MAXIMIZE;
-					SetWindowPlacement(EQhWnd, &window_placement);
-#ifdef LOGGING
-					WriteLog("EQGAME: Going Fullscreen First Maximize (2)");
-#endif
-				}
-				SetWindowPos(EQhWnd, HWND_TOP, window_rect.left, window_rect.top,
-					window_rect.right - window_rect.left, window_rect.bottom - window_rect.top,
-					SWP_NOOWNERZORDER | SWP_FRAMECHANGED | SWP_NOSENDCHANGING | SWP_SHOWWINDOW);
-
-				bWindowedMode = false;	
-				first_maximize = false;
-			}
-			if (GetForegroundWindow() == EQhWnd && !IsIconic(EQhWnd)) {
-				if (!has_focus) {
-#ifdef LOGGING
-					WriteLog("EQGAME: Window Regained focus after lost focus.");
-#endif
-					focus_regained_time = GetTickCount();
-					ResetMouseFlags();
-					while (ShowCursor(FALSE) >= 0);
-					// regained focus
-					if (ResolutionStored) {
-						if (heqwMod) {
-							int result;
-							result = (*(int(__stdcall **)(DWORD))(**(DWORD **)d3ddev + 12))(*(DWORD *)d3ddev);
-							//char str[56];
-							//sprintf(str, "TestCoop = %d", result);
-							//MessageBox(NULL, str, NULL, MB_OK);
-							if (result == -2005530519 || result == -2005530520) {
-#ifdef LOGGING
-								WriteLog("EQGAME: d3d device failed - reinitializing 3d device");
-#endif
-								*(DWORD*)0x005FE990 = resx;
-								*(DWORD*)0x005FE994 = resy;
-								*(DWORD*)0x005FE998 = bpp;
-								*(DWORD*)0x0063AE8C = refresh;
-								((int(__cdecl*)())0x0043BBE2)();
-							}
-						}
-						else {
-							// when in full screen mode, this will end up killing window.
-								*(DWORD*)0x005FE990 = resx;
-								*(DWORD*)0x005FE994 = resy;
-								*(DWORD*)0x005FE998 = bpp;
-								*(DWORD*)0x0063AE8C = refresh;
-								((int(__cdecl*)())0x0043BBE2)();
-						}
-					}
-				}
-				if (!ResolutionStored && *(DWORD*)(0x007F97D0) != 0)
-				{
-#ifdef LOGGING
-					WriteLog("EQGAME: Storing Resolution Info (2)");
-#endif
-					DWORD ptr = *(DWORD*)(0x007F97D0);
-
-					resx = *(DWORD*)(ptr + 0x7A28);
-					resy = *(DWORD*)(ptr + 0x7A2C);
-					bpp = *(DWORD*)(ptr + 0x7A20);
-					refresh = *(DWORD*)(ptr + 0x7A30);
-
-					ResolutionStored = true;
-					eqgfxMod = *(DWORD*)(0x007F9C50);
-					d3ddev = (DWORD)(eqgfxMod + 0x00A4F92C);
-
-				}
-				has_focus = true;
-			}
-			else {
-				if (has_focus) {
-#ifdef LOGGING
-					WriteLog("EQGAME: Lost focus of window.  Different process in foreground.");
-#endif
-					ResetMouseFlags();
-					ignore_right_click = true;
-					ignore_left_click = true;
-					focus_regained_time = 0;
-					while (ShowCursor(TRUE) < 0);
-				}
-				has_focus = false;
-				return 0;
-			}
-		}
-		else if (!bWindowedMode && EQ_OBJECT_CEverQuest == NULL) {
-			SetEQhWnd();
-			ProcessAltState();
-			SetWindowLong(EQhWnd, GWL_STYLE, stored_window_info.dwStyle | WS_CAPTION );
-			SetWindowLong(EQhWnd, GWL_EXSTYLE, stored_window_info.dwExStyle);
-#ifdef LOGGING
-			WriteLog("EQGAME: EQ Object found Null Dropping Fullscreen (1)");
-#endif
-			if (!IsIconic(EQhWnd) && window_info_stored) {
-				SetWindowPos(EQhWnd, HWND_TOP, stored_window_info.rcWindow.left, stored_window_info.rcWindow.top,
-					stored_window_info.rcWindow.right - stored_window_info.rcWindow.left, stored_window_info.rcWindow.bottom - stored_window_info.rcWindow.top,
-					SWP_NOOWNERZORDER | SWP_FRAMECHANGED | SWP_NOSENDCHANGING | SWP_SHOWWINDOW);
-			}
-			can_fullscreen = false;
-			bWindowedMode = true;
-			start_fullscreen = true;
-			first_maximize = true;
-		}
-		SetEQhWnd();
-		if (EQhWnd == GetForegroundWindow())
-		{
-			return CDisplay__Process_Events_Trampoline();
-		}
-		return 0;
-	}
 	int CDisplay__Render_World_Trampoline();
 	int CDisplay__Render_World_Detour()
 	{
@@ -945,23 +625,12 @@ DETOUR_TRAMPOLINE_EMPTY(unsigned char Eqmachooks::CEverQuest__HandleWorldMessage
 DETOUR_TRAMPOLINE_EMPTY(int Eqmachooks::CEQMusicManager__Set_Trampoline(int, int, int, int, int, int, int, int, int));
 DETOUR_TRAMPOLINE_EMPTY(int Eqmachooks::CEQMusicManager__Play_Trampoline(int, int));
 DETOUR_TRAMPOLINE_EMPTY(int Eqmachooks::CEQMusicManager__WavPlay_Trampoline(int, int));
-DETOUR_TRAMPOLINE_EMPTY(int __fastcall CEverQuest__DisplayScreen_Trampoline(DWORD*, unsigned, char *));
 DETOUR_TRAMPOLINE_EMPTY(DWORD WINAPI GetModuleFileNameA_tramp(HMODULE,LPTSTR,DWORD));
-DETOUR_TRAMPOLINE_EMPTY(DWORD WINAPI WritePrivateProfileStringA_tramp(LPCSTR,LPCSTR,LPCSTR, LPCSTR));
 DETOUR_TRAMPOLINE_EMPTY(int __cdecl SendExeChecksum_Trampoline(void));
 DETOUR_TRAMPOLINE_EMPTY(int __cdecl ProcessKeyDown_Trampoline(int));
-DETOUR_TRAMPOLINE_EMPTY(int __cdecl ProcessKeyUp_Trampoline(int));
-DETOUR_TRAMPOLINE_EMPTY(unsigned __int64 __stdcall GetCpuTicks2_Trampoline());
-DETOUR_TRAMPOLINE_EMPTY(int __cdecl do_quit_Trampoline(int, int));
 DETOUR_TRAMPOLINE_EMPTY(int __cdecl CityCanStart_Trampoline(int, int, int, int));
-DETOUR_TRAMPOLINE_EMPTY(LRESULT WINAPI WndProc_Trampoline(HWND, UINT, WPARAM, LPARAM));
-DETOUR_TRAMPOLINE_EMPTY(void WINAPI RightMouseDown_Trampoline(__int16, __int16));
-DETOUR_TRAMPOLINE_EMPTY(void WINAPI RightMouseUp_Trampoline(__int16, __int16));
-DETOUR_TRAMPOLINE_EMPTY(void WINAPI LeftMouseDown_Trampoline(__int16, __int16));
-DETOUR_TRAMPOLINE_EMPTY(void WINAPI LeftMouseUp_Trampoline(__int16, __int16));
+
 DETOUR_TRAMPOLINE_EMPTY(int Eqmachooks::CDisplay__Render_World_Trampoline());
-DETOUR_TRAMPOLINE_EMPTY(int __cdecl  Eqmachooks::CDisplay__Process_Events_Trampoline());
-DETOUR_TRAMPOLINE_EMPTY(HWND WINAPI CreateWindowExA_Trampoline(DWORD,LPCSTR,LPCSTR,DWORD,int,int,int,int,HWND,HMENU,HINSTANCE,LPVOID));
 DETOUR_TRAMPOLINE_EMPTY(int __cdecl HandleMouseWheel_Trampoline(int));
 DETOUR_TRAMPOLINE_EMPTY(int sub_4F35E5_Trampoline()); // command line parsing
 DETOUR_TRAMPOLINE_EMPTY(int WINAPI sub_4B8231_Trampoline(int, signed int)); // MGB for BST
@@ -983,185 +652,15 @@ int __cdecl CEverQuest__SendMessage_Detour(int* connection, int opcode, char* bu
 	return CEverQuest__SendMessage_Trampoline(connection, opcode, buffer, len, unknown);
 }
 
-class CCharacterSelectWnd;
 
-class CCharacterSelectWnd : public CSidlScreenWnd
-{
-public:
-	void CCharacterSelectWnd::Quit(void);
-};
-
-#define EQ_FUNCTION_CCharacterSelectWnd__Quit 0x0040F3E0
-#ifdef EQ_FUNCTION_CCharacterSelectWnd__Quit
-typedef int(__thiscall* EQ_FUNCTION_TYPE_CCharacterSelectWnd__Quit)(void* this_ptr);
-#endif
-
-EQ_FUNCTION_TYPE_CCharacterSelectWnd__Quit EQMACMQ_REAL_CCharacterSelectWnd__Quit = NULL;
-EQ_FUNCTION_TYPE_CEverQuest__InterpretCmd EQMACMQ_REAL_CEverQuest__InterpretCmd = NULL;
-
-int __fastcall EQMACMQ_DETOUR_CCharacterSelectWnd__Quit(void* this_ptr, void* not_used)
-{
-	// Quit or Esc button pressed from character select screen
-	if (!bWindowedMode)
-	{
-		SetEQhWnd();
-		SetWindowLong(EQhWnd, GWL_STYLE, stored_window_info.dwStyle | WS_CAPTION );
-		SetWindowLong(EQhWnd, GWL_EXSTYLE, stored_window_info.dwExStyle & ~(WS_EX_TOPMOST));
-#ifdef LOGGING
-		WriteLog("EQGAME: Going Windowed - Quit from char select");
-#endif
-		can_fullscreen = false;
-		bWindowedMode = true;
-		start_fullscreen = true;
-		first_maximize = true;
-	}
-
-	return EQMACMQ_REAL_CCharacterSelectWnd__Quit(this_ptr);
-}
-
-int __fastcall CEverQuest__DisplayScreen_Detour(DWORD* this_game, unsigned unused_edx, char *a1) {
-	// this is the "Client Disconnected" screen - go back to windowed
-	if (!bWindowedMode) {
-		SetEQhWnd();
-		SetWindowLong(EQhWnd, GWL_STYLE, stored_window_info.dwStyle | WS_CAPTION );
-		SetWindowLong(EQhWnd, GWL_EXSTYLE, stored_window_info.dwExStyle & ~(WS_EX_TOPMOST));
-#ifdef LOGGING
-		WriteLog("EQGAME: Dropping to Windowed Mode - Client Disconnected");
-#endif
-		can_fullscreen = false;
-		bWindowedMode = true;
-		start_fullscreen = true;
-		first_maximize = true;
-	}
-
-	return CEverQuest__DisplayScreen_Trampoline(this_game, unused_edx, a1);
-}
-
-LRESULT WINAPI WndProc_Detour(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam) {
-	if (EQ_OBJECT_CEverQuest != NULL && Msg != 16) {
-
-		if (WM_WINDOWPOSCHANGED == Msg || WM_WINDOWPOSCHANGING == Msg || WM_NCCALCSIZE == Msg || WM_PAINT == Msg)
-		{
-			return 0;
-		}
-		
-		if (WM_SYSCOMMAND == Msg)
-		{
-			if (wParam == SC_MINIMIZE)
-			{
-				return 0;
-			}
-		}
-		
-		if (WM_ACTIVATE == Msg || WM_ACTIVATEAPP == Msg)
-		{
-			if (wParam) {
-				SetEQhWnd();
-				//if (in_full_screen)
-				//	start_fullscreen = true;
-				//else
-					 ShowWindow(EQhWnd, SW_SHOW);
-				
-				ResetMouseFlags();
-				while (ShowCursor(FALSE) >= 0);
-			}
-			else
-			{
-				ResetMouseFlags();
-				while (ShowCursor(TRUE) < 0);
-			}
-		}
-
-		if (!bWindowedMode || start_fullscreen) {
-			SetEQhWnd();
-			if (EQ_OBJECT_CEverQuest->GameState > 0 && EQ_OBJECT_CEverQuest->GameState != 255 && can_fullscreen) {
-				if (start_fullscreen && bWindowedMode && !IsIconic(EQhWnd)) {
-					// this does not hit initially on startup
-#ifdef LOGGING
-					WriteLog("EQGAME: Going Fullscreen (3)");
-#endif
-					if (bWindowedMode && !window_info_stored) {
-#ifdef LOGGING
-						WriteLog("EQGAME: Storing window info");
-#endif
-						GetWindowInfo(EQhWnd, &stored_window_info);
-						window_info_stored = true;
-					}
-
-					stored_window_info.dwStyle = GetWindowLong(EQhWnd, GWL_STYLE);
-					stored_window_info.dwExStyle = GetWindowLong(EQhWnd, GWL_EXSTYLE);
-
-					SetWindowLong(EQhWnd, GWL_STYLE,
-						stored_window_info.dwStyle & ~(WS_CAPTION | WS_THICKFRAME | WS_SYSMENU));
-
-					SetWindowLong(EQhWnd, GWL_EXSTYLE,
-						stored_window_info.dwExStyle & ~(WS_EX_DLGMODALFRAME |
-							WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE));
-
-					MONITORINFO monitor_info;
-					monitor_info.cbSize = sizeof(monitor_info);
-					GetMonitorInfo(MonitorFromWindow(EQhWnd, MONITOR_DEFAULTTONEAREST),
-						&monitor_info);
-					RECT window_rect(monitor_info.rcMonitor);
-
-					WINDOWPLACEMENT window_placement;
-					window_placement.length = sizeof(window_placement);
-
-					if (first_maximize) {
-						GetWindowPlacement(EQhWnd, &window_placement);
-						window_placement.showCmd = SW_MINIMIZE;
-						SetWindowPlacement(EQhWnd, &window_placement);
-						window_placement.showCmd = SW_MAXIMIZE;
-						SetWindowPlacement(EQhWnd, &window_placement);
-					}
-					if (!IsIconic(EQhWnd) && window_info_stored) {
-						SetWindowPos(EQhWnd, HWND_TOP, window_rect.left, window_rect.top,
-							window_rect.right - window_rect.left, window_rect.bottom - window_rect.top,
-							SWP_NOOWNERZORDER | SWP_FRAMECHANGED | SWP_NOSENDCHANGING | SWP_SHOWWINDOW);
-					}
-
-					bWindowedMode = false;		
-					first_maximize = false;
-				}
-			}
-		}
-	}
-	else {
-		if (!bWindowedMode) {
-			//MessageBox(NULL, "C3", NULL, MB_OK);
-#ifdef LOGGING
-			WriteLog("EQGAME: Dropping Fullscreen (2)");
-#endif
-			SetWindowLong(EQhWnd, GWL_STYLE, stored_window_info.dwStyle | WS_CAPTION );
-			SetWindowLong(EQhWnd, GWL_EXSTYLE, stored_window_info.dwExStyle | WS_EX_APPWINDOW);
-
-			if (!IsIconic(EQhWnd) && window_info_stored) {
-				SetWindowPos(EQhWnd, HWND_TOP, stored_window_info.rcWindow.left, stored_window_info.rcWindow.top,
-					stored_window_info.rcWindow.right - stored_window_info.rcWindow.left, stored_window_info.rcWindow.bottom - stored_window_info.rcWindow.top,
-					SWP_NOOWNERZORDER | SWP_FRAMECHANGED | SWP_NOSENDCHANGING | SWP_SHOWWINDOW);
-			}
-			can_fullscreen = false;
-			bWindowedMode = true;
-			start_fullscreen = true;
-			first_maximize = true;
-		}
-		if (!title_set) {
-			UpdateTitle();
-			title_set = true;
-		}
-	}
-	LRESULT res = WndProc_Trampoline(hWnd, Msg, wParam, lParam);
-	return res;
-}
-
-void SkipLicense()
+void SkipLicense(HMODULE eqmain_dll)
 {
 	DWORD offset = (DWORD)eqmain_dll + 0x255D2;
-	const char test1[] = { 0xEB }; // , 0x90, 0x90, 0x90, 0x90, 0x90};
+	const unsigned char test1[] = { 0xEB }; // , 0x90, 0x90, 0x90, 0x90, 0x90};
 	PatchA((DWORD*)offset, &test1, sizeof(test1));
 }
 
-void SkipSplash()
+void SkipSplash(HMODULE eqmain_dll)
 {
 	// Set timer for intro splash screens to 0
 	const char test1[] = { 0x00, 0x00 };
@@ -1170,14 +669,25 @@ void SkipSplash()
 	PatchA((DWORD*)offset, &test1, sizeof(test1));
 }
 
-void SetDInputCooperativeMode()
+// This patch is registered with eqw.dll and executed each time eqmain.dll is loaded. The dll
+// can get loaded multiple times and also flushed from memory, so these calls must be safe to repeat.
+void PatchEqMain()
 {
-	// Set timer for intro splash screens to 0
-	const char test1[] = { (char)(0x06) };
+	HINSTANCE eqmain_dll = GetModuleHandle("eqmain.dll");
+	if (!eqmain_dll)
+		return;
+	
+	// if new_main_dll is at right location in dll
+	// then add bypass for skipping splash screens.
+	DWORD checkpoint = (DWORD)GetProcAddress(eqmain_dll, "new_dll_main") ;
+	DWORD delta = checkpoint - (DWORD)eqmain_dll;
+	if (delta != 0x25300)
+		return;
 
-	DWORD offset = (DWORD)eqmain_dll + 0x3400F;
-	PatchA((DWORD*)offset, &test1, sizeof(test1));
+	// SkipLicense(eqmain_dll);
+	SkipSplash(eqmain_dll);
 }
+
 
 //#ifdef GM_MODE
 void __fastcall EQMACMQ_DETOUR_CBuffWindow__RefreshBuffDisplay(CBuffWindow* this_ptr, void* not_used)
@@ -1522,98 +1032,9 @@ int sub_4F35E5_Detour(){
 	return sub_4F35E5_Trampoline();
 }
 
-extern bool mouse_looking;
-extern POINT savedRMousePos;
-
-void WINAPI RightMouseUp_Detour(__int16 a1, __int16 a2) {
-	if (ignore_right_click_up)
-		return;
-
-	return RightMouseUp_Trampoline(a1, a2);
-}
-
-void WINAPI RightMouseDown_Detour(__int16 a1, __int16 a2) {
-
-	if (ignore_right_click) {
-		if (!(GetAsyncKeyState(VK_RBUTTON) & 0x8000)) {
-			if (has_focus && focus_regained_time > 0) {
-				if ((GetTickCount() - focus_regained_time) > 10) {
-					ignore_right_click_up = false;
-					ignore_right_click = false;
-					ignore_left_click_up = false;
-					ignore_left_click = false;
-					focus_regained_time = 0;
-				}
-				else {
-					ignore_right_click_up = true;
-					return;
-				}
-			}
-			else {
-				ignore_right_click_up = true;
-				return;
-			}
-		}
-		else {
-			ignore_right_click = false;
-			ignore_right_click_up = false;
-		}
-	}
-
-	RightMouseDown_Trampoline(a1, a2);
-	if(EQ_OBJECT_CEverQuest != NULL && EQ_OBJECT_CEverQuest->GameState == 5) {
-		if (*(DWORD*)0x007985EA == 0x00010001) {
-			mouse_looking = true;
-			if (savedRMousePos.x == 0 && savedRMousePos.y == 0)
-			{
-				savedRMousePos.x = *(DWORD*)0x008092E8;
-				savedRMousePos.y = *(DWORD*)0x008092EC;
-			}
-		}
-	}
-	return;
-}
-
-void WINAPI LeftMouseUp_Detour(__int16 a1, __int16 a2) {
-	if (ignore_left_click_up)
-		return;
-
-	return LeftMouseUp_Trampoline(a1, a2);
-}
-
-void WINAPI LeftMouseDown_Detour(__int16 a1, __int16 a2) {
-
-	if (ignore_left_click) {
-		if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) {
-			if (has_focus && focus_regained_time > 0) {
-				if ((GetTickCount() - focus_regained_time) > 10) {
-					ignore_left_click_up = false;
-					ignore_left_click = false;
-					ignore_right_click_up = false;
-					ignore_right_click = false;
-					focus_regained_time = 0;
-				}
-				else {
-					ignore_left_click_up = true;
-					return;
-				}
-			}
-			else {
-				ignore_left_click_up = true;
-				return;
-			}
-		}
-		else {
-			ignore_left_click = false;
-			ignore_left_click_up = false;
-		}
-	}
-	return LeftMouseDown_Trampoline(a1, a2);
-}
-
 int __cdecl HandleMouseWheel_Detour(int a1) {
 	// do mouse wheel only if in game
-	if (EQ_OBJECT_CEverQuest != NULL && can_fullscreen && EQ_OBJECT_CEverQuest->GameState == 5) {
+	if (EQ_OBJECT_CEverQuest != NULL && EQ_OBJECT_CEverQuest->GameState == 5) {
 		// add check here to see if GM
 		PEQSPAWNINFO playerSpawn = (PEQSPAWNINFO)EQ_OBJECT_PlayerSpawn;
 		if (playerSpawn == NULL)
@@ -1625,7 +1046,7 @@ int __cdecl HandleMouseWheel_Detour(int a1) {
 		}
 		EQMACMQ_DoMouseWheelZoom(a1);
 
-		if (!*(BYTE*)0x8092D8);
+		if (!*(BYTE*)0x8092D8)
 			return 0;
 	}
 	return HandleMouseWheel_Trampoline(a1);
@@ -1682,28 +1103,28 @@ void PatchSaveBypass()
 	//PatchA((DWORD*)0x005598C5, &test11, sizeof(test11));
 
 	// Face picker patch.
-	const char test12[] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0xEB };
+	const unsigned char test12[] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0xEB };
 	PatchA((DWORD*)0x005431C1, &test12, sizeof(test12));
 
 	if (g_bEnableBrownSkeletons)
 	{
-		const char test13[] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0xEB };
+		const unsigned char test13[] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0xEB };
 		PatchA((DWORD*)0x0049F28F, &test13, sizeof(test13));
 	}
 
-	const char test14[] = { 0xEB, 0x1A };
+	const unsigned char test14[] = { 0xEB, 0x1A };
 	PatchA((DWORD*)0x42D14D, &test14, sizeof(test14));
 
 	//Changes the limit to 0x3E8 (1000) on race animations.
-	const char test15[] = { 0xE8, 0x03 };
+	const unsigned char test15[] = { 0xE8, 0x03 };
 	PatchA((DWORD*)0x004AE612, &test15, sizeof(test15));
 
 	//Changes the limit to 0x3E8 (1000) on race animations.
-	const char test16[] = { 0xE8, 0x03 };
+	const unsigned char test16[] = { 0xE8, 0x03 };
 	PatchA((DWORD*)0x4d93c5, &test16, sizeof(test16));
 
 	//Changes the limit to 0x3E8 (1000) on race spawning to apply sounds and textures.
-	const char test17[] = { 0xE8, 0x03 };
+	const unsigned char test17[] = { 0xE8, 0x03 };
 	PatchA((DWORD*)0x50704c, &test17, sizeof(test17));
 
 	////Patch the trampoline for untextured horse to check its validity. currently hardcoded to IDs in hook, but this bypasses the initial check. 11 nops.
@@ -1735,9 +1156,6 @@ int __cdecl s3dSetStringSpriteYonClip_Detour(intptr_t sprite, int a2, float dist
 	return s3dSetStringSpriteYonClip_Trampoline(sprite, a2, distance);
 }
 
-
-
-typedef unsigned __int64(__cdecl *_GetCpuSpeed2)();
 typedef float (__cdecl *_FastMathFunction)(float);
 typedef float(__cdecl *_CalculateAccurateCoefficientsFromHeadingPitchRoll)(float, float, float, float);
 
@@ -1749,33 +1167,6 @@ _FastMathFunction GetFastCotangent_Trampoline;
 _CalculateAccurateCoefficientsFromHeadingPitchRoll CalculateCoefficientsFromHeadingPitchRoll_Trampoline;
 _CalculateAccurateCoefficientsFromHeadingPitchRoll CalculateHeadingPitchRollFromCoefficients_Trampoline;
 _FastAngleArcFunction GetFactAngleArcFunction;
-_GetCpuSpeed2 GetCpuSpeed1_Trampoline;
-_GetCpuSpeed2 GetCpuSpeed2_Trampoline;
-_GetCpuSpeed2 GetCpuSpeed3_Trampoline;
-
-LARGE_INTEGER g_ProcessorSpeed;
-LARGE_INTEGER g_ProcessorTicks;
-
-unsigned __int64 __stdcall GetCpuTicks_Detour() {
-
-	LARGE_INTEGER qpcResult;
-	QueryPerformanceCounter(&qpcResult);
-	return (qpcResult.QuadPart - g_ProcessorTicks.QuadPart);
-}
-
-unsigned __int64 __stdcall GetCpuSpeed2_Detour() {
-		LARGE_INTEGER Frequency;
-
-		if (!QueryPerformanceFrequency(&Frequency))
-		{
-			MessageBoxW(0, L"This OS is not supported.", L"Error", 0);
-			exit(-1);
-		}
-		g_ProcessorSpeed.QuadPart = Frequency.QuadPart / 1000;
-		QueryPerformanceCounter(&g_ProcessorTicks);
-		Sleep(1000u);
-		return g_ProcessorSpeed.QuadPart;
-}
 
 DWORD org_nonFastCos = 0;
 DWORD org_nonFastSin = 0;
@@ -1843,74 +1234,6 @@ float CalculateHeadingPitchRollFromCoefficients_Detour(float a1, float a2, float
 //	return t3dAngleArcTangentFloat_Trampoline(a1);
 //}
 
-
-
-HWND WINAPI CreateWindowExA_Detour(DWORD     dwExStyle,
-	LPCSTR   lpClassName,
-	LPCSTR   lpWindowName,
-	DWORD     dwStyle,
-	int       x,
-	int       y,
-	int       nWidth,
-	int       nHeight,
-	HWND      hWndParent,
-	HMENU     hMenu,
-	HINSTANCE hInstance,
-	LPVOID    lpParam) {
-
-	can_fullscreen = false;
-	first_maximize = true;
-	if (!eqmain_dll) {
-		eqmain_dll = GetModuleHandleA("eqmain.dll");
-		if (eqmain_dll) {
-			DWORD checkpoint = *(DWORD*)0x807410;
-			DWORD delta = checkpoint - (DWORD)eqmain_dll;
-			// if new_main_dll is at right location in dll
-			// then add bypass for skipping license and splash screen
-			if (delta == 0x25300) {
-				//SkipLicense();
-				if(g_bEnableExtendedNameplates)
-				{
-					//g_ProcessorSpeed = 0;
-				}
-				(_GetCpuSpeed2)GetCpuSpeed3_Trampoline = (_GetCpuSpeed2)DetourFunction((PBYTE)0x00559BF4, (PBYTE)GetCpuTicks_Detour);
-				//(_GetCpuSpeed2)GetCpuSpeed2_Trampoline = (_GetCpuSpeed2)DetourFunction((PBYTE)0x00559BF4, (PBYTE)GetCpuSpeed2_Detour);
-				//PatchA((DWORD*)0x007812F8, &g_ProcessorSpeed, 8);
-				SkipSplash();
-				//SetDInputCooperativeMode();
-			}
-			PatchSaveBypass();
-		}
-	}
-	return CreateWindowExA_Trampoline(dwExStyle, lpClassName, lpWindowName, dwStyle, x, y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam);
-}
-
-int __cdecl do_quit_Detour(int a1, int a2) {
-	if (!a2 || !*(BYTE *)a2)
-	{
-		if (*(BYTE*)0x7CF29C)
-		{
-			// we are locked
-		}
-		else {
-			// Quit or Esc button pressed from character select screen
-			if (!bWindowedMode)
-			{
-				SetEQhWnd();
-				SetWindowLong(EQhWnd, GWL_STYLE, stored_window_info.dwStyle | WS_CAPTION );
-				SetWindowLong(EQhWnd, GWL_EXSTYLE, stored_window_info.dwExStyle & ~(WS_EX_TOPMOST));
-#ifdef LOGGING
-				WriteLog("EQGAME: Going Windowed - Used /quit from in game");
-#endif
-				can_fullscreen = false;
-				bWindowedMode = true;
-				start_fullscreen = true;
-				first_maximize = true;
-			}
-		}
-	}
-	return do_quit_Trampoline(a1, a2);
-}
 
 bool isChest(char* str)
 {
@@ -2049,7 +1372,7 @@ static void __fastcall EQPlayer_SetAccel_Detour(EQSPAWNINFO* this_entity, int un
 	// Max Speed horse reaches max speed in ~9 seconds so Max speed horse does not get supercharged by this fix
 	float min_speed = min(target_speed, 0.7f);
 	float process_physics_fps_factor = *reinterpret_cast<float*>(0x007d01dc);  // min(12.0, 0.02f * frame_time_ms)
-	float accel_speed = process_physics_fps_factor * 0.006 + this_entity->MovementSpeed;
+	float accel_speed = process_physics_fps_factor * 0.006f + this_entity->MovementSpeed;
 	this_entity->MovementSpeed = max(min_speed, min(target_speed, accel_speed));
 }
 
@@ -2215,7 +1538,7 @@ static int __cdecl ProcessUpdateStats_Detour(short* stats_update) {
 	// view.
 	entity->Y = mount->Y;
 	entity->X = mount->X;
-	entity->Z = mount->Z + mount->ModelHeightOffset + 	1.0;  // Shortcut approx.
+	entity->Z = mount->Z + mount->ModelHeightOffset + 	1.0f;  // Shortcut approx.
 	entity->Heading = mount->Heading;
 	entity->MovementSpeed = 0.0f;
 	entity->MovementSpeedY = 0.0f;
@@ -2240,7 +1563,7 @@ static int __cdecl ProcessUpdateStats_Detour(short* stats_update) {
 	return 1;
 }
 
-void ApplyHorseQolPatches(HINSTANCE heqGfxMod)
+void ApplyHorseQolPatches()
 {
 	HorsesEnabled = GetEQClientIniFlag_55B947("Defaults", "UseLuclinElementals", "TRUE") && GetEQClientIniFlag_55B947("Defaults", "UseLuclinHorses", "TRUE");
 	HasInvalidRiderTexture_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer__HasInvalidRiderTexture)DetourFunction((PBYTE)0x0051FCA6, (PBYTE)HasInvalidRiderTexture_Detour);
@@ -2284,7 +1607,7 @@ void ApplyHorseQolPatches(HINSTANCE heqGfxMod)
 
 // Modified Version of EQCharacter::StunMe(duration) that overrides their current stun even if they are already stunned.
 // This needs to happen for mez effects to be able to extend themselves or apply while the player is already stunned.
-__int16 __fastcall EQCharacter__ForceStunMe(EQCHARINFO* charinfo, int unused, unsigned int duration)
+void __fastcall EQCharacter__ForceStunMe(EQCHARINFO* charinfo, int unused, unsigned int duration)
 {
 	EQSPAWNINFO* entity = charinfo->SpawnInfo;
 	if (entity)
@@ -2300,13 +1623,13 @@ __int16 __fastcall EQCharacter__ForceStunMe(EQCHARINFO* charinfo, int unused, un
 				{
 					entity = charinfo->SpawnInfo;
 					if (!entity || entity->Type)
-						return (__int16)entity;
+						return;
 					dur = 1000;
 				}
 				__int64 end_time = dur + EqGetTime();
 				if (actor_info->StunnedUntilTime < end_time)
 				{
-					actor_info->StunnedUntilTime = end_time;
+					actor_info->StunnedUntilTime = static_cast<DWORD>(end_time);
 					charinfo->StunnedState = 1;
 					CDisplay::SetSpecialEnvironment(23);
 					entity->MovementSpeed = 0.0;
@@ -2318,7 +1641,7 @@ __int16 __fastcall EQCharacter__ForceStunMe(EQCHARINFO* charinfo, int unused, un
 			}
 		}
 	}
-	return (__int16)entity;
+	return;
 }
 
 void ApplyMesmerizationFixes()
@@ -2347,7 +1670,7 @@ void __fastcall EQ_Character__HitBySpell_Detour(EQCHARINFO* this_ptr, int u, Act
 		if (caster && caster->Type == 0 && caster->Class == EQ_CLASS_BARD && action->level > caster->Level)
 		{
 			BYTE tmp_level = caster->Level;
-			caster->Level = action->level;
+			caster->Level = static_cast<BYTE>(action->level);
 			EQ_Character__HitBySpell_Trampoline(this_ptr, action);
 			caster->Level = tmp_level;
 			return;
@@ -2631,105 +1954,19 @@ int __cdecl CityCanStart_Detour(int a1, int a2, int a3, int a4) {
 	return CityCanStart_Trampoline(a1, a2, a3, a4);
 }
 
-int __cdecl ProcessKeyUp_Detour(int a1)
-{
-#ifdef LOGGING
-	std::string outstring;
-	outstring = "EQGAME: KeyPress Up = ";
-	outstring += std::to_string(a1);
-	WriteLog(outstring);
-#endif
-	if (!has_focus || has_focus && ((GetTickCount() - focus_regained_time) <= 10))
-		return ProcessKeyUp_Trampoline(0x00);
-
-	return ProcessKeyUp_Trampoline(a1);
-}
-
 int __cdecl ProcessKeyDown_Detour(int a1)
 {
-#ifdef LOGGING
-	std::string outstring;
-	outstring = "EQGAME: KeyPress Down = ";
-	outstring += std::to_string(a1);
-	WriteLog(outstring);
-#endif
-
-	if (!has_focus || has_focus && ((GetTickCount() - focus_regained_time) <= 10))
-		return ProcessKeyDown_Trampoline(0x00);
-
-	SetEQhWnd();
-	if (EQ_OBJECT_CEverQuest != NULL && can_fullscreen && EQ_OBJECT_CEverQuest->GameState > 0 && a1 == 0x1c && AltPressed() && !ShiftPressed() && !CtrlPressed()) {
-#ifdef LOGGING
-		WriteLog("EQGAME: Alt - Enter Detected");
-#endif
-		//MessageBox(NULL, "Alt-Enter Detected", NULL, MB_OK);
-		if (bWindowedMode) {
-#ifdef LOGGING
-			WriteLog("EQGAME: Currently in windowed mode.");
-#endif
-			ResetMouseFlags();
-
-			// store window positions
-			if (!window_info_stored) {
-				GetWindowInfo(EQhWnd, &stored_window_info);
-				window_info_stored = true;
-			}
-
-			// removed borders, etc.
-			SetWindowLong(EQhWnd, GWL_STYLE,
-				stored_window_info.dwStyle & ~(WS_CAPTION | WS_THICKFRAME | WS_SYSMENU));
-
-			SetWindowLong(EQhWnd, GWL_EXSTYLE,
-				stored_window_info.dwExStyle & ~(WS_EX_DLGMODALFRAME |
-					WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE));
-
-			// find points to use for current monitor
-			MONITORINFO monitor_info;
-			monitor_info.cbSize = sizeof(monitor_info);
-			GetMonitorInfo(MonitorFromWindow(EQhWnd, MONITOR_DEFAULTTONEAREST),
-				&monitor_info);
-			RECT window_rect(monitor_info.rcMonitor);
-
-			WINDOWPLACEMENT window_placement;
-			window_placement.length = sizeof(window_placement);
-
-			if (first_maximize) {
-				GetWindowPlacement(EQhWnd, &window_placement);
-				window_placement.showCmd = SW_MINIMIZE;
-				SetWindowPlacement(EQhWnd, &window_placement);
-				window_placement.showCmd = SW_MAXIMIZE;
-				SetWindowPlacement(EQhWnd, &window_placement);
-			}
-			SetWindowPos(EQhWnd, HWND_TOP, window_rect.left, window_rect.top,
-				window_rect.right - window_rect.left, window_rect.bottom - window_rect.top,
-				SWP_NOOWNERZORDER | SWP_FRAMECHANGED | SWP_NOSENDCHANGING | SWP_SHOWWINDOW);
-
-			char szDefault[255];
-
-			sprintf(szDefault, "%s", "FALSE");
-			WritePrivateProfileStringA_tramp("Options", "WindowedMode", szDefault, "./eqclient.ini");
-			start_fullscreen = true;
-			first_maximize = false;
+	if (EQ_OBJECT_CEverQuest != NULL && EQ_OBJECT_CEverQuest->GameState == 5 && a1 == 0x1c && AltPressed() && !ShiftPressed() && !CtrlPressed()) {
+		auto eqw = GetModuleHandle("eqw.dll");
+		FARPROC fn_get = eqw ? GetProcAddress(eqw, "GetEnableFullScreen") : nullptr;
+		FARPROC fn_set = eqw ? GetProcAddress(eqw, "SetEnableFullScreen") : nullptr;
+		if (fn_get && fn_set) {
+			int full_screen_mode = reinterpret_cast<int(__stdcall *)()>(fn_get)();
+			reinterpret_cast<void(__stdcall *)(int enable)>(fn_set)(full_screen_mode == 0);
 		}
-		else
-		{
-			//ResetMouseFlags();
-#ifdef LOGGING
-			WriteLog("EQGAME: Currently in full screen mode.");
-#endif
-			SetWindowLong(EQhWnd, GWL_STYLE, stored_window_info.dwStyle | WS_CAPTION );
-			SetWindowLong(EQhWnd, GWL_EXSTYLE, stored_window_info.dwExStyle);
-			if (window_info_stored) {
-				SetWindowPos(EQhWnd, HWND_TOP, stored_window_info.rcWindow.left, stored_window_info.rcWindow.top,
-					stored_window_info.rcWindow.right - stored_window_info.rcWindow.left, stored_window_info.rcWindow.bottom - stored_window_info.rcWindow.top,
-					SWP_NOOWNERZORDER | SWP_FRAMECHANGED | SWP_NOSENDCHANGING | SWP_SHOWWINDOW);
-			}
-			char szDefault[255];
-			sprintf(szDefault, "%s", "TRUE");
-			WritePrivateProfileStringA_tramp("Options", "WindowedMode", szDefault, "./eqclient.ini");
-			start_fullscreen = false;
+		else {
+		  print_chat("Error attempting to toggle full screen mode");
 		}
-		bWindowedMode = !bWindowedMode;
 		return ProcessKeyDown_Trampoline(0x00); // null
 	}
 
@@ -2753,211 +1990,7 @@ DWORD WINAPI GetModuleFileNameA_detour(HMODULE hMod,LPTSTR outstring,DWORD nSize
 	return ret;
 }
 
-int new_height;
-int new_width;
 
-DWORD WINAPI WritePrivateProfileStringA_detour(LPCSTR lpAppName, LPCSTR lpKeyName, LPCSTR lpString, LPCSTR lpFileName)
-{
-	if (lstrcmp(lpAppName, "Positions") == 0) {
-		// if in fullscreen mode, we do not want to write out positions to eqw.ini
-		// switching from char select can reset also
-		if (EQ_OBJECT_CEverQuest != NULL && EQ_OBJECT_CEverQuest->GameState != 5 && lstrcmp(lpString, "0") == 0) {
-			return true;
-		}
-		if (!bWindowedMode)
-			return true;
-	}
-	DWORD ret = WritePrivateProfileStringA_tramp(lpAppName, lpKeyName, lpString, lpFileName);
-	
-	if (lstrcmp(lpAppName, "VideoMode") == 0) {
-		if (lstrcmp(lpKeyName, "Height") == 0) {
-			if (!bWindowedMode)
-				window_info_stored = false;
-			new_height = atoi(lpString);
-		} else if (lstrcmp(lpKeyName, "Width") == 0) {
-			if (!bWindowedMode)
-				window_info_stored = false;
-			new_width = atoi(lpString);
-		}
-		else if (lstrcmp(lpKeyName, "BitsPerPixel") == 0) {
-
-			if (resy != new_height || resx != new_width) {
-				ResolutionStored = false;
-				resx = new_width;
-				resy = new_height;
-
-				if (!bWindowedMode) {
-					// go out of full screen
-					SetEQhWnd();
-					SetWindowLong(EQhWnd, GWL_STYLE, stored_window_info.dwStyle | WS_CAPTION );
-					SetWindowLong(EQhWnd, GWL_EXSTYLE, stored_window_info.dwExStyle);
-					
-					// eqw will adjust window to default loc for this resolution
-					// store the windowed location
-					GetWindowInfo(EQhWnd, &stored_window_info);
-					window_info_stored = true;
-
-
-					// removed borders, etc.
-					SetWindowLong(EQhWnd, GWL_STYLE,
-						stored_window_info.dwStyle & ~(WS_CAPTION | WS_THICKFRAME | WS_SYSMENU));
-
-					SetWindowLong(EQhWnd, GWL_EXSTYLE,
-						stored_window_info.dwExStyle & ~(WS_EX_DLGMODALFRAME |
-							WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE));
-
-					// restore back to full screen
-					MONITORINFO monitor_info;
-					monitor_info.cbSize = sizeof(monitor_info);
-					GetMonitorInfo(MonitorFromWindow(EQhWnd, MONITOR_DEFAULTTONEAREST),
-						&monitor_info);
-					RECT window_rect(monitor_info.rcMonitor);
-
-					WINDOWPLACEMENT window_placement;
-					window_placement.length = sizeof(window_placement);
-
-					SetWindowPos(EQhWnd, HWND_TOP, window_rect.left, window_rect.top,
-						window_rect.right - window_rect.left, window_rect.bottom - window_rect.top,
-						SWP_NOOWNERZORDER | SWP_FRAMECHANGED | SWP_NOSENDCHANGING | SWP_SHOWWINDOW);
-
-				} else {
-					// we need to save the new windowed mode position
-					GetWindowInfo(EQhWnd, &stored_window_info);
-					first_maximize = true;
-				}
-			}
-		}
-	}
-
-	return ret;
-}
-
-
-const bool IsMouseOverWindow(HWND hWnd, const int mx, const int my,
-	const bool inClientSpace /*= false */)
-{
-	if (!IsWindowVisible(hWnd))
-		return false;
-
-	RECT windowRect;
-
-	// Get the window in screen space
-	::GetWindowRect(hWnd, &windowRect);
-
-	if (inClientSpace)
-	{
-		POINT offset;
-		offset.x = offset.y = 0;
-		ClientToScreen(hWnd, &offset);
-
-		// Offset the window to client space
-		windowRect.left -= offset.x;
-		windowRect.top -= offset.y;
-		// NOTE: left and top should now be 0, 0
-		windowRect.right -= offset.x;
-		windowRect.bottom -= offset.y;
-	}
-
-	// Test if mouse over window
-	POINT cursorPos = { mx, my };
-	return PtInRect(&windowRect, cursorPos);
-}
-
-signed int __cdecl ProcessMouseEvent_Hook()
-{
-	bool shouldRetEarly = false;
-	signed int ret = 0;
-
-	SetEQhWnd();
-
-#ifdef FREE_THE_MOUSE
-	POINT p;
-	GetCursorPos(&p);
-	BYTE dval = *(BYTE*)0x007985EA;
-
-	if (dval == 0) {
-		if (!IsMouseOverWindow(EQhWnd, p.x, p.y, false))
-		{
-			EQ_flush_mouse();
-			EQ_SetMousePosition(32767, 32767);
-			while (ShowCursor(FALSE) >= 0);
-			if (posPoint.x == 0 && posPoint.y == 0)
-			{
-				return ret;
-			}
-		}
-		// we have stored cursor positions
-		// restore cursor to previous position
-		if (posPoint.x != 0 && posPoint.y != 0 && (GetForegroundWindow() == EQhWnd))
-		{
-			POINT pt;
-			pt.x = posPoint.x;
-			pt.y = posPoint.y;
-			ClientToScreen(EQhWnd, &pt);
-			SetCursorPos(pt.x, pt.y);
-			EQ_SetMousePosition(posPoint.x, posPoint.y);
-			posPoint.x = 0;
-			posPoint.y = 0;
-			shouldRetEarly = true;
-			while (ShowCursor(TRUE) < 0);
-		}
-	}
-#endif
-
-	ret = return_ProcessMouseEvent();
-
-	if (!RightHandMouse) {
-		*(BYTE*)0x00798616 = BYTE1(*(DWORD*)0x8090B4) != 0;
-		*(BYTE*)0x00798617 = BYTE2(*(DWORD*)0x8090B4) != 0;
-	}
-
-
-	if (mouse_looking && (GetForegroundWindow() == EQhWnd))
-	{
-		if (savedRMousePos.x != 0 && savedRMousePos.y != 0)
-		{
-			POINT pt;
-			pt.x = savedRMousePos.x;
-			pt.y = savedRMousePos.y;
-			ClientToScreen(EQhWnd, &pt);
-			SetCursorPos(pt.x, pt.y);
-			EQ_SetMousePosition(savedRMousePos.x, savedRMousePos.y);
-		}
-	}
-	else if (!mouse_looking || (GetForegroundWindow() != EQhWnd))
-	{
-		savedRMousePos.x = 0;
-		savedRMousePos.y = 0;
-	}
-
-#ifdef FREE_THE_MOUSE
-	if (shouldRetEarly)
-	{
-		return ret;
-	}
-	if (EQhWnd)
-	{
-		if (ScreenToClient(EQhWnd, &p))
-		{
-			if (dval == 0)
-			{
-				*(DWORD*)0x008092E8 = p.x;
-				*(DWORD*)0x008092EC = p.y;
-			}
-			else
-			{
-				if (posPoint.x == 0 && posPoint.y == 0)
-				{
-					posPoint.x = *(DWORD*)0x008092E8;
-					posPoint.y = *(DWORD*)0x008092EC;
-					while (ShowCursor(FALSE) >= 0);
-				}
-			}
-		}
-	}
-#endif
-	return ret;
-}
 
 void InitRaceShortCodeMap()
 {
@@ -2992,26 +2025,9 @@ void InitRaceShortCodeMap()
 	}
 }
 
-/*signed int __cdecl SetMouseCenter_Hook()//55B722
-{
-	signed int retval = return_SetMouseCenter();
-	if (EQhWnd)
-	{
-		RECT windowRect;
-		::GetWindowRect(EQhWnd, &windowRect);
-		int width = windowRect.right - windowRect.left;
-		int height = windowRect.bottom - windowRect.top;
-		POINT pt;
-		pt.x = posPoint.x;
-		pt.y = posPoint.y;
-		ClientToScreen(EQhWnd, &pt);
-		SetCursorPos(pt.x, pt.y);
-
-	}
-	return retval;
-}*/
 extern void LoadIniSettings();
 
+EQ_FUNCTION_TYPE_CEverQuest__InterpretCmd EQMACMQ_REAL_CEverQuest__InterpretCmd = NULL;
 int __fastcall EQMACMQ_DETOUR_CEverQuest__InterpretCmd(void* this_ptr, void* not_used, class EQPlayer* a1, char* a2)
 {
 	if (a1 == NULL || a2 == NULL)
@@ -3030,12 +2046,13 @@ int __fastcall EQMACMQ_DETOUR_CEverQuest__InterpretCmd(void* this_ptr, void* not
 		memmove(a2, a2 + 1, strlen(a2));
 	}
 	if (strcmp(a2, "/fps") == 0) {
-		// enable fps indicator
-		if (eqgfxMod) {
-			if (*(BYTE*)(eqgfxMod + 0x00A4F770) == 0)
-				*(BYTE*)(eqgfxMod + 0x00A4F770) = 1;
-			else
-				*(BYTE*)(eqgfxMod + 0x00A4F770) = 0;
+	  static int fps_enable = 0;  // Local static state flag for toggling.
+
+		auto dll = GetModuleHandle("eqgfx_dx8.dll");
+	  FARPROC fn = dll ? GetProcAddress(dll, "t3dFPSEnable") : nullptr;
+		if (fn) {
+			fps_enable = (fps_enable == 0);
+			reinterpret_cast<int(__cdecl *)(int enable)>(fn)(fps_enable);
 		}
 		return EQMACMQ_REAL_CEverQuest__InterpretCmd(this_ptr, NULL, NULL);
 	}
@@ -3053,7 +2070,7 @@ int __fastcall EQMACMQ_DETOUR_CEverQuest__InterpretCmd(void* this_ptr, void* not
 
 	if (strcmp(a2, "/songs") == 0) {
 		g_bSongWindowAutoHide = !g_bSongWindowAutoHide;
-		WritePrivateProfileStringA_tramp("Defaults", "SongWindowAutoHide", g_bSongWindowAutoHide ? "TRUE" : "FALSE", "./eqclient.ini");
+		::WritePrivateProfileStringA("Defaults", "SongWindowAutoHide", g_bSongWindowAutoHide ? "TRUE" : "FALSE", "./eqclient.ini");
 		print_chat("Song Window auto-hide: %s.", g_bSongWindowAutoHide ? "ON" : "OFF");
 		if (!g_bSongWindowAutoHide && GetShortDurationBuffWindow() && !GetShortDurationBuffWindow()->IsVisibile()) {
 			GetShortDurationBuffWindow()->Show(1, 1);
@@ -3120,6 +2137,9 @@ int __fastcall EQMACMQ_DETOUR_CEverQuest__InterpretCmd(void* this_ptr, void* not
 				}
 				fclose(result);
 			}
+		}
+		else {
+				print_chat("Not in raid");
 		}
 		return EQMACMQ_REAL_CEverQuest__InterpretCmd(this_ptr, NULL, NULL);
 	}
@@ -3239,7 +2259,7 @@ bool BuffstackingPatch_HandleHandshake(DWORD id, DWORD value, bool is_request)
 	Rule_Num_Short_Buffs = enabled_songs;
 	if (send_response)
 	{
-		SendCustomSpawnAppearanceMessage(id, value, false);
+		SendCustomSpawnAppearanceMessage(static_cast<WORD>(id), static_cast<WORD>(value), false);
 	}
 	return true;
 }
@@ -3414,7 +2434,7 @@ _EQBUFFINFO* BSP_FindAffectSlot(EQCHARINFO* player, WORD spellid, _EQSPAWNINFO* 
 		// if we have a result slot already, overwrite the result slot if something is there and it's not this spell_id
 		if (*result_buffslot != -1)
 		{
-			EQBUFFINFO* buff = EQ_Character::GetBuff(player, *result_buffslot);
+			EQBUFFINFO* buff = EQ_Character::GetBuff(player, static_cast<short>(*result_buffslot));
 			if (!dry_run && buff->BuffType && spellid != buff->SpellId)
 			{
 				EQ_Character::RemoveBuff(player, buff, 0);
@@ -3616,7 +2636,7 @@ _EQBUFFINFO* BSP_FindAffectSlot(EQCHARINFO* player, WORD spellid, _EQSPAWNINFO* 
 				}
 				if (*result_buffslot == -1)
 					goto STACK_OK2;
-				no_slot_found_yet = EQ_Character::GetBuff(player, *result_buffslot)->BuffType == 0;
+				no_slot_found_yet = EQ_Character::GetBuff(player, static_cast<short>(*result_buffslot))->BuffType == 0;
 				goto STACK_OK3;
 			}
 		OVERWRITE_150:
@@ -3661,7 +2681,7 @@ USE_CURRENT_BUFF_SLOT:
 		return buff;
 	}
 RETURN_RESULT_SLOTNUM_194:
-	return EQ_Character::GetBuff(player, *result_buffslot);
+	return EQ_Character::GetBuff(player, static_cast<short>(*result_buffslot));
 }
 
 // Entrypoint for Buff Patch
@@ -4150,7 +3170,7 @@ constexpr WORD CustomSpawnAppearanceMessage_SharedBankSlotsSupported = 5;
 constexpr WORD CustomSpawnAppearanceMessage_SharedBankMode = 6;
 
 int Rule_Shared_Bank_Mode = 0; // 0 = Disabled, 1 = Enabled, may add more later
-int Rule_Shared_Bank_Slots_Available = 0; // Controls which slots we can deposit to. Set by the server.
+DWORD Rule_Shared_Bank_Slots_Available = 0; // Controls which slots we can deposit to. Set by the server.
 
 DWORD MAX_SHARED_BANK_SLOTS = 0; // Set by PatchMaxBankSlots
 DWORD MAX_BANK_SLOTS = 8; // Set by PatchMaxBankSlots
@@ -4180,7 +3200,7 @@ bool SharedBank_HandleMessages(DWORD id, DWORD value, bool is_request)
 #ifdef BANK_LOGGING
 			print_chat("[SharedBank] Responding with %i shared bank slots", Rule_Shared_Bank_Slots_Available);
 #endif
-			SendCustomSpawnAppearanceMessage(CustomSpawnAppearanceMessage_SharedBankSlotsSupported, Rule_Shared_Bank_Slots_Available, false);
+			SendCustomSpawnAppearanceMessage(CustomSpawnAppearanceMessage_SharedBankSlotsSupported, static_cast<WORD>(Rule_Shared_Bank_Slots_Available), false);
 		}
 		return true;
 	}
@@ -4335,7 +3355,7 @@ bool SB_CheckLoreConflictWithSharedBank(EQITEMINFO* item, int skip_slot_id = -1)
 	{
 		WORD LoreItemId = item->Id;
 
-		for (int i = 0; i < MAX_SHARED_BANK_SLOTS; i++)
+		for (DWORD i = 0; i < MAX_SHARED_BANK_SLOTS; i++)
 		{
 			if (skip_slot_id == (2500 + i))
 				continue;
@@ -4453,7 +3473,7 @@ int __stdcall MoveItem_Detour(int fromSlot, int toSlot, int printChat, int b2)
 
 		if (toSlot >= 2500 && toSlot < 2530) // Primary Shared Bank Slot
 		{
-			int bag_idx = toSlot - 2500;
+			DWORD bag_idx = toSlot - 2500;
 			if (bag_idx >= Rule_Shared_Bank_Slots_Available)
 			{
 				print_chat("This shared bank slot is not enabled at this time.");
@@ -4468,8 +3488,8 @@ int __stdcall MoveItem_Detour(int fromSlot, int toSlot, int printChat, int b2)
 		}
 		else if (toSlot >= 2530 && toSlot < 2830) // Contents within a shared bank bag
 		{
-			int contents_idx = toSlot - 2530;
-			int bag_idx = contents_idx / 10;
+			DWORD contents_idx = toSlot - 2530;
+			DWORD bag_idx = contents_idx / 10;
 			if (bag_idx >= Rule_Shared_Bank_Slots_Available)
 			{
 				print_chat("This shared bank slot is not enabled at this time.");
@@ -4506,7 +3526,7 @@ int __stdcall MoveItem_Detour(int fromSlot, int toSlot, int printChat, int b2)
 
 		if (fromSlot >= 2500 && fromSlot < 2530) // Primary Shared Bank Slot
 		{
-			int bag_idx = fromSlot - 2500;
+			DWORD bag_idx = fromSlot - 2500;
 			if (bag_idx >= Rule_Shared_Bank_Slots_Available)
 			{
 				if (bag_idx >= MAX_SHARED_BANK_SLOTS)
@@ -4533,8 +3553,8 @@ int __stdcall MoveItem_Detour(int fromSlot, int toSlot, int printChat, int b2)
 		}
 		else if (fromSlot >= 2530 && fromSlot < 2830) // Contents within a shared bank bag
 		{
-			int contents_idx = fromSlot - 2530;
-			int bag_idx = contents_idx / 10;
+			DWORD contents_idx = fromSlot - 2530;
+			DWORD bag_idx = contents_idx / 10;
 			// We'll allow withdrawing from all slots even if it's beyond Rule_Shared_Bank_Slots_Available.
 			// So people can remove items from disabled slots, just not deposit.
 			if (bag_idx >= MAX_SHARED_BANK_SLOTS)
@@ -4656,7 +3676,7 @@ DWORD __fastcall CInvSlotMgr__UpdateSlots_Detour(int this_ptr, int unused)
 
 			DWORD NumInvSlots = *(DWORD*)(this_ptr + CInvSlotMgr_NumInvSlots_Offset);
 			int* InvSlotArray = (int*)(this_ptr + 4);
-			for (int i = 0; i < NumInvSlots; i++)
+			for (DWORD i = 0; i < NumInvSlots; i++)
 			{
 				int InvSlot = InvSlotArray[i];
 				if (InvSlot != 0)
@@ -4675,8 +3695,8 @@ DWORD __fastcall CInvSlotMgr__UpdateSlots_Detour(int this_ptr, int unused)
 							if (Item == 0)
 								continue;
 
-							int contents_idx = (SlotId - 2030);
-							int bag_idx = contents_idx / 10;
+							DWORD contents_idx = (SlotId - 2030);
+							DWORD bag_idx = contents_idx / 10;
 							if (bag_idx < MAX_BANK_SLOTS)
 							{
 								EQITEMINFO* bag = charInfo->InventoryBankItem[bag_idx];
@@ -4687,7 +3707,7 @@ DWORD __fastcall CInvSlotMgr__UpdateSlots_Detour(int this_ptr, int unused)
 						else if (SlotId >= 2500 && SlotId < 2530)
 						{
 							// Shared Bank Slot - Set the item
-							int bag_idx = (SlotId - 2500);
+							DWORD bag_idx = (SlotId - 2500);
 							if (bag_idx < MAX_SHARED_BANK_SLOTS)
 							{
 								EQITEMINFO* bag = charInfo->SharedBankItem[bag_idx];
@@ -4697,8 +3717,8 @@ DWORD __fastcall CInvSlotMgr__UpdateSlots_Detour(int this_ptr, int unused)
 						else if (SlotId >= 2530 && SlotId < 2830)
 						{
 							// Shared Bank Contents - Set the item
-							int contents_idx = (SlotId - 2530);
-							int bag_idx = contents_idx / 10;
+							DWORD contents_idx = (SlotId - 2530);
+							DWORD bag_idx = contents_idx / 10;
 							if (bag_idx < MAX_SHARED_BANK_SLOTS)
 							{
 								EQITEMINFO* bag = charInfo->SharedBankItem[bag_idx];
@@ -4712,7 +3732,7 @@ DWORD __fastcall CInvSlotMgr__UpdateSlots_Detour(int this_ptr, int unused)
 				}
 			}
 		}
-		*(DWORD*)(this_ptr + CInvSlotMgr_LastUpdateTime_Offset) = EqGetTime();
+		*(DWORD*)(this_ptr + CInvSlotMgr_LastUpdateTime_Offset) = static_cast<DWORD>(EqGetTime());
 	}
 
 	return result;
@@ -4943,7 +3963,7 @@ void PatchExtraBankSlotSupport()
 
 	if (MAX_BANK_SLOTS > 9) // Existing logic is already '2009' hardcoded
 	{
-		const WORD int16_BankSlotEnd = 2000 + MAX_BANK_SLOTS;
+		const WORD int16_BankSlotEnd = static_cast<WORD>(2000 + MAX_BANK_SLOTS);
 
 		// Item packets handlers methods - Does validation check on bank bag range
 		PatchT(0x4E0C3B + 2, (short)int16_BankSlotEnd); // 0x41F6 OP_CharInventory -> OP_CharInventory_PlayerContainer_4E0A6D
@@ -5022,11 +4042,6 @@ void PatchCheckLoreConflict()
 // ---------------------------------------------------------------------------------------
 
 DWORD gmfadress = 0;
-DWORD wpsaddress = 0;
-DWORD swAddress = 0;
-DWORD cwAddress = 0;
-DWORD swlAddress = 0;
-DWORD uwAddress = 0;
 
 PVOID pHandler;
 bool bInitalized=false;
@@ -5039,14 +4054,14 @@ void CheckPromptUIChoice()
 	DWORD error = GetPrivateProfileStringA("Defaults", "OldUI", szDefault, szResult, 255, "./eqclient.ini");
 	if (strcmp(szResult, "NONE") == 0) // File not found
 	{
-		int Result = MessageBox(EQhWnd, "This server supports running both the Stone (Pre-Luclin) UI, and the more modern Luclin UI.\n Would you like to use the Luclin UI? This can later be adjusted ingame by typing /oldui.", "EverQuest", MB_YESNO);
+		int Result = MessageBox(*EQhWnd, "This server supports running both the Stone (Pre-Luclin) UI, and the more modern Luclin UI.\n Would you like to use the Luclin UI? This can later be adjusted ingame by typing /oldui.", "EverQuest", MB_YESNO);
 		if (Result == IDYES)
 		{
-			WritePrivateProfileStringA_tramp("Defaults", "OldUI", "FALSE", "./eqclient.ini");
+			::WritePrivateProfileStringA("Defaults", "OldUI", "FALSE", "./eqclient.ini");
 		}
 		else
 		{
-			WritePrivateProfileStringA_tramp("Defaults", "OldUI", "TRUE", "./eqclient.ini");
+			::WritePrivateProfileStringA("Defaults", "OldUI", "TRUE", "./eqclient.ini");
 		}
 
 	}
@@ -5132,98 +4147,94 @@ void CheckClientMiniMods()
 	}
 }
 
+// This patch is registered with eqw.dll and executed immediately after the eqgfx_dx8.dll is loaded at boot.
+void PatchEqGfx()
+{
+	HINSTANCE heqGfxMod = GetModuleHandle("eqgfx_dx8.dll");
+	if (!heqGfxMod) {
+	  MessageBox(NULL, "Initialization error", "Failed to access eqgfx_dx8.dll", MB_OK | MB_ICONERROR);
+		ExitProcess(1);
+	}
+
+	_s3dSetStringSpriteYonClip s3dSetStringSpriteYonClip = (_s3dSetStringSpriteYonClip)GetProcAddress(heqGfxMod, "s3dSetStringSpriteYonClip");
+	if (s3dSetStringSpriteYonClip)
+	{
+		(_s3dSetStringSpriteYonClip)s3dSetStringSpriteYonClip_Trampoline = (_s3dSetStringSpriteYonClip)DetourFunction((PBYTE)s3dSetStringSpriteYonClip, (PBYTE)s3dSetStringSpriteYonClip_Detour);
+	}
+	_FastMathFunction ot3dFastCosine = (_FastMathFunction)GetProcAddress(heqGfxMod, "t3dFloatFastCosine");
+	if (ot3dFastCosine)
+	{
+		(_FastMathFunction)GetFastCosine_Trampoline = (_FastMathFunction)DetourFunction((PBYTE)ot3dFastCosine, (PBYTE)t3dFastCosine_Detour);
+	}
+
+	_FastMathFunction ot3dFastSine = (_FastMathFunction)GetProcAddress(heqGfxMod, "t3dFloatFastSine");
+	if (ot3dFastSine)
+	{
+		(_FastMathFunction)GetFastSine_Trampoline = (_FastMathFunction)DetourFunction((PBYTE)ot3dFastSine, (PBYTE)t3dFastSine_Detour);
+	}
+
+	_FastMathFunction ot3dFastCotangent = (_FastMathFunction)GetProcAddress(heqGfxMod, "t3dFloatFastCotangent");
+	if (ot3dFastCotangent)
+	{
+		(_FastMathFunction)GetFastCotangent_Trampoline = (_FastMathFunction)DetourFunction((PBYTE)ot3dFastCotangent, (PBYTE)t3dFastCotangent_Detour);
+	}
+
+	_CalculateAccurateCoefficientsFromHeadingPitchRoll ot3dCalculateCoefficientsFromHeadingPitchRoll = (_CalculateAccurateCoefficientsFromHeadingPitchRoll)GetProcAddress(heqGfxMod, "t3dCalculateCoefficientsFromHeadingPitchRoll");
+	if (ot3dCalculateCoefficientsFromHeadingPitchRoll)
+	{
+		(_CalculateAccurateCoefficientsFromHeadingPitchRoll)CalculateCoefficientsFromHeadingPitchRoll_Trampoline = (_CalculateAccurateCoefficientsFromHeadingPitchRoll)DetourFunction((PBYTE)ot3dCalculateCoefficientsFromHeadingPitchRoll, (PBYTE)CalculateCoefficientsFromHeadingPitchRoll_Detour);
+	}
+
+	_CalculateAccurateCoefficientsFromHeadingPitchRoll ot3dCCalculateHeadingPitchRollFromCoefficients = (_CalculateAccurateCoefficientsFromHeadingPitchRoll)GetProcAddress(heqGfxMod, "t3dCalculateHeadingPitchRollFromCoefficients");
+	if (ot3dCCalculateHeadingPitchRollFromCoefficients)
+	{
+		(_CalculateAccurateCoefficientsFromHeadingPitchRoll)CalculateHeadingPitchRollFromCoefficients_Trampoline = (_CalculateAccurateCoefficientsFromHeadingPitchRoll)DetourFunction((PBYTE)ot3dCCalculateHeadingPitchRollFromCoefficients, (PBYTE)CalculateHeadingPitchRollFromCoefficients_Detour);
+	}
+	//org_fix16Tangent = (DWORD)GetProcAddress(heqGfxMod, "t3dAngleArcTangentFix16");
+
+	org_nonFastCos = (DWORD)GetProcAddress(heqGfxMod, "t3dFloatCosine");
+	org_nonFastSin = (DWORD)GetProcAddress(heqGfxMod, "t3dFloatSine");
+	org_nonFastCotangent = (DWORD)GetProcAddress(heqGfxMod, "t3dFloatCotangent");
+	org_calculateAccurateCoefficientsFromHeadingPitchRoll = (DWORD)GetProcAddress(heqGfxMod, "t3dCalculateAccurateCoefficientsFromHeadingPitchRoll");
+	org_calculateAccurateHeadingPitchRollFromCoefficients = (DWORD)GetProcAddress(heqGfxMod, "t3dCalculateAccurateHeadingPitchRollFromCoefficients");
+	//_FastMathFunction ot3dFastCotangent = (_FastMathFunction)GetProcAddress(heqGfxMod, "t3dFloatFastCotangent");
+	//if (ot3dFastCotangent)
+	//{
+	//	(_FastMathFunction)GetFastCotangent_Trampoline = (_FastMathFunction)DetourFunction((PBYTE)ot3dFastCotangent, (PBYTE)t3dFastCotangent_Detour);
+	//}
+}
+
+
 void InitHooks()
 {
 
 	//bypass filename req
-	const char test3[] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,0x90, 0xEB, 0x1B, 0x90, 0x90, 0x90, 0x90 };
+	const unsigned char test3[] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,0x90, 0xEB, 0x1B, 0x90, 0x90, 0x90, 0x90 };
 	PatchA((DWORD*)0x005595A7, &test3, sizeof(test3));
 
-	HMODULE eqgfx_dll = LoadLibraryA("eqgfx_dx8.dll");
-	HINSTANCE heqGfxMod = nullptr;
-	if (eqgfx_dll)
-	{
-		heqGfxMod = GetModuleHandle("eqgfx_dx8.dll");
-		if (heqGfxMod)
-		{
-			_s3dSetStringSpriteYonClip s3dSetStringSpriteYonClip = (_s3dSetStringSpriteYonClip)GetProcAddress(heqGfxMod, "s3dSetStringSpriteYonClip");
-			if (s3dSetStringSpriteYonClip)
-			{
-				(_s3dSetStringSpriteYonClip)s3dSetStringSpriteYonClip_Trampoline = (_s3dSetStringSpriteYonClip)DetourFunction((PBYTE)s3dSetStringSpriteYonClip, (PBYTE)s3dSetStringSpriteYonClip_Detour);
-			}
-			_FastMathFunction ot3dFastCosine = (_FastMathFunction)GetProcAddress(heqGfxMod, "t3dFloatFastCosine");
-			if (ot3dFastCosine)
-			{
-				(_FastMathFunction)GetFastCosine_Trampoline = (_FastMathFunction)DetourFunction((PBYTE)ot3dFastCosine, (PBYTE)t3dFastCosine_Detour);
-			}
-
-			_FastMathFunction ot3dFastSine = (_FastMathFunction)GetProcAddress(heqGfxMod, "t3dFloatFastSine");
-			if (ot3dFastSine)
-			{
-				(_FastMathFunction)GetFastSine_Trampoline = (_FastMathFunction)DetourFunction((PBYTE)ot3dFastSine, (PBYTE)t3dFastSine_Detour);
-			}
-
-			_FastMathFunction ot3dFastCotangent = (_FastMathFunction)GetProcAddress(heqGfxMod, "t3dFloatFastCotangent");
-			if (ot3dFastCotangent)
-			{
-				(_FastMathFunction)GetFastCotangent_Trampoline = (_FastMathFunction)DetourFunction((PBYTE)ot3dFastCotangent, (PBYTE)t3dFastCotangent_Detour);
-			}
-
-			_CalculateAccurateCoefficientsFromHeadingPitchRoll ot3dCalculateCoefficientsFromHeadingPitchRoll = (_CalculateAccurateCoefficientsFromHeadingPitchRoll)GetProcAddress(heqGfxMod, "t3dCalculateCoefficientsFromHeadingPitchRoll");
-			if (ot3dCalculateCoefficientsFromHeadingPitchRoll)
-			{
-				(_CalculateAccurateCoefficientsFromHeadingPitchRoll)CalculateCoefficientsFromHeadingPitchRoll_Trampoline = (_CalculateAccurateCoefficientsFromHeadingPitchRoll)DetourFunction((PBYTE)ot3dCalculateCoefficientsFromHeadingPitchRoll, (PBYTE)CalculateCoefficientsFromHeadingPitchRoll_Detour);
-			}
-
-			_CalculateAccurateCoefficientsFromHeadingPitchRoll ot3dCCalculateHeadingPitchRollFromCoefficients = (_CalculateAccurateCoefficientsFromHeadingPitchRoll)GetProcAddress(heqGfxMod, "t3dCalculateHeadingPitchRollFromCoefficients");
-			if (ot3dCCalculateHeadingPitchRollFromCoefficients)
-			{
-				(_CalculateAccurateCoefficientsFromHeadingPitchRoll)CalculateHeadingPitchRollFromCoefficients_Trampoline = (_CalculateAccurateCoefficientsFromHeadingPitchRoll)DetourFunction((PBYTE)ot3dCCalculateHeadingPitchRollFromCoefficients, (PBYTE)CalculateHeadingPitchRollFromCoefficients_Detour);
-			}
-			//org_fix16Tangent = (DWORD)GetProcAddress(heqGfxMod, "t3dAngleArcTangentFix16");
-
-			org_nonFastCos = (DWORD)GetProcAddress(heqGfxMod, "t3dFloatCosine");
-			org_nonFastSin = (DWORD)GetProcAddress(heqGfxMod, "t3dFloatSine");
-			org_nonFastCotangent = (DWORD)GetProcAddress(heqGfxMod, "t3dFloatCotangent");
-			org_calculateAccurateCoefficientsFromHeadingPitchRoll = (DWORD)GetProcAddress(heqGfxMod, "t3dCalculateAccurateCoefficientsFromHeadingPitchRoll");
-			org_calculateAccurateHeadingPitchRollFromCoefficients = (DWORD)GetProcAddress(heqGfxMod, "t3dCalculateAccurateHeadingPitchRollFromCoefficients");
-			//_FastMathFunction ot3dFastCotangent = (_FastMathFunction)GetProcAddress(heqGfxMod, "t3dFloatFastCotangent");
-			//if (ot3dFastCotangent)
-			//{
-			//	(_FastMathFunction)GetFastCotangent_Trampoline = (_FastMathFunction)DetourFunction((PBYTE)ot3dFastCotangent, (PBYTE)t3dFastCotangent_Detour);
-			//}
-
-			_GetCpuSpeed2 cpuSpeed2 = (_GetCpuSpeed2)GetProcAddress(heqGfxMod, "GetCpuSpeed2");
-			if (cpuSpeed2)
-			{
-				(_GetCpuSpeed2)GetCpuSpeed2_Trampoline = (_GetCpuSpeed2)DetourFunction((PBYTE)cpuSpeed2, (PBYTE)GetCpuSpeed2_Detour);
-			}
-
-			_GetCpuSpeed2 cpuSpeed3 = (_GetCpuSpeed2)GetProcAddress(heqGfxMod, "GetCpuSpeed3");
-			if (cpuSpeed3)
-			{
-				(_GetCpuSpeed2)GetCpuSpeed1_Trampoline = (_GetCpuSpeed2)DetourFunction((PBYTE)cpuSpeed3, (PBYTE)GetCpuSpeed2_Detour);
-			}
-		}
+	auto eqw = GetModuleHandle("eqw.dll");
+	FARPROC set_eqmain = eqw ? GetProcAddress(eqw, "SetEqMainInitFn") : nullptr;
+	FARPROC set_eqgfx = eqw ? GetProcAddress(eqw, "SetEqGfxInitFn") : nullptr;
+	if (!set_eqmain || !set_eqgfx) {
+		MessageBoxA(NULL, "Installation error", "eqw.dll is not compatible", MB_OK | MB_ICONERROR);
+		ExitProcess(1);
 	}
+	// Install the patch callbacks for eqmain.dll and eqgfx_dx8.dll.
+	reinterpret_cast<void(__stdcall *)(void(*)())>(set_eqmain)(PatchEqMain);
+	reinterpret_cast<void(__stdcall *)(void(*)())>(set_eqgfx)(PatchEqGfx);
+
 	PatchSaveBypass();
 	//heqwMod
 	HMODULE hkernel32Mod = GetModuleHandle("kernel32.dll");
 	gmfadress = (DWORD)GetProcAddress(hkernel32Mod, "GetModuleFileNameA");
-	wpsaddress = (DWORD)GetProcAddress(hkernel32Mod, "WritePrivateProfileStringA");
 	HMODULE huser32Mod = GetModuleHandleA("user32.dll");
 
-	swAddress = (DWORD)GetProcAddress(huser32Mod, "ShowWindow");
-	cwAddress = (DWORD)GetProcAddress(huser32Mod, "CreateWindowExA");
-	swlAddress = (DWORD)GetProcAddress(huser32Mod, "SetWindowLong");
 	EzDetour(0x004F2ED0, SendExeChecksum_Detour, SendExeChecksum_Trampoline);
 	EzDetour(0x004AA8BC, &Eqmachooks::CDisplay__Render_World_Detour, &Eqmachooks::CDisplay__Render_World_Trampoline);
-	EzDetour(cwAddress, CreateWindowExA_Detour, CreateWindowExA_Trampoline);
-	//here to fix the no items on corpse bug - eqmule
+		//here to fix the no items on corpse bug - eqmule
 	EzDetour(0x004E829F, &Eqmachooks::CEverQuest__HandleWorldMessage_Detour, &Eqmachooks::CEverQuest__HandleWorldMessage_Trampoline);
 	CEverQuest__SendMessage_Trampoline = (EQ_FUNCTION_TYPE_CEverQuest__SendMessage)DetourFunction((PBYTE)0x54E51A, (PBYTE)CEverQuest__SendMessage_Detour);
 	EzDetour(gmfadress, GetModuleFileNameA_detour, GetModuleFileNameA_tramp);
-	EzDetour(wpsaddress, WritePrivateProfileStringA_detour, WritePrivateProfileStringA_tramp);
 
 	// Supports additional labels (Song Window, for now). Zeal handles most others.
 	GetLabelFromEQ_Trampoline = (EQ_FUNCTION_TYPE_GetLabelFromEQ)DetourFunction((PBYTE)0x436680, (PBYTE)GetLabelFromEQ_Detour);
@@ -5239,17 +4250,19 @@ void InitHooks()
 	EQMACMQ_REAL_CBuffWindow__RefreshBuffDisplay = (EQ_FUNCTION_TYPE_CBuffWindow__RefreshBuffDisplay)DetourFunction((PBYTE)EQ_FUNCTION_CBuffWindow__RefreshBuffDisplay, (PBYTE)EQMACMQ_DETOUR_CBuffWindow__RefreshBuffDisplay);
 	EQMACMQ_REAL_CBuffWindow__PostDraw = (EQ_FUNCTION_TYPE_CBuffWindow__PostDraw)DetourFunction((PBYTE)EQ_FUNCTION_CBuffWindow__PostDraw, (PBYTE)EQMACMQ_DETOUR_CBuffWindow__PostDraw);
 	EQMACMQ_REAL_EQ_Character__CastSpell = (EQ_FUNCTION_TYPE_EQ_Character__CastSpell)DetourFunction((PBYTE)EQ_FUNCTION_EQ_Character__CastSpell, (PBYTE)EQMACMQ_DETOUR_EQ_Character__CastSpell);
-	heqwMod = GetModuleHandle("eqw.dll");
 	EQZoneInfo_Ctor_Trampoline = (EQ_FUNCTION_TYPE_EQZoneInfo__EQZoneInfo)DetourFunction((PBYTE)0x005223C6, (PBYTE)EQZoneInfo_Ctor_Detour);
 	EQPlayer_GetActorTag_Trampoline = (EQ_FUNCTION_TYPE_EQPlayer_GetActorTag)DetourFunction((PBYTE)0x0050845D, (PBYTE)EQPlayer_GetActorTag_Detour);
 	CDisplay__GetAlternateAnimTag_Trampoline = (EQ_FUNCTION_TYPE_CDisplay__GetAlternateAnimTag)DetourFunction((PBYTE)0x4D8065, (PBYTE)CDisplay__GetAlternateAnimTag_Detour);
 
 	// Horse Support
-	ApplyHorseQolPatches(heqGfxMod);
+	ApplyHorseQolPatches();
 	
 	// Buggy Armor Material Fixes
 	CDisplay__SetDefaultITAttachments_Trampoline = (EQ_FUNCTION_TYPE_CDisplay__SetDefaultITAttachments)DetourFunction((PBYTE)0x4A02E8, (PBYTE)CDisplay__SetDefaultITAttachments_4A02E8);
 	CDisplay__HandleMaterialEx_Trampoline = (EQ_FUNCTION_TYPE_CDisplay__HandleMaterialEx)DetourFunction((PBYTE)0x4A1EB7, (PBYTE)CDisplay__HandleMaterialEx_4A1EB7);
+
+	// Update the window title on the first enter zone callback.
+	OnZoneCallbacks.push_back(UpdateTitle);  // Note: This is getting overwritten by a mainloop call to SetWindowText.
 
 	// Sends DLL_VERSION to the server on zone-in
 	OnZoneCallbacks.push_back(SendDllVersion_OnZone);
@@ -5297,27 +4310,9 @@ void InitHooks()
 	FixBazaarCrash();
 
 	SetPvpLevelRange(100, 0);
-
-	return_ProcessMouseEvent = (ProcessGameEvents_t)DetourFunction((PBYTE)o_MouseEvents, (PBYTE)ProcessMouseEvent_Hook);
-	//return_SetMouseCenter = (ProcessGameEvents_t)DetourFunction((PBYTE)o_MouseCenter, (PBYTE)SetMouseCenter_Hook);
-
-	eqgfxMod = *(DWORD*)(0x007F9C50);
-	d3ddev = (DWORD)(eqgfxMod + 0x00A4F92C);
-		
-	EzDetour(0x0055A4F4, WndProc_Detour, WndProc_Trampoline);
+	
 	// This detours key press down handler, so we can capture alt-enter to switch video modes
 	EzDetour(EQ_FUNCTION_ProcessKeyDown, ProcessKeyDown_Detour, ProcessKeyDown_Trampoline);
-	EzDetour(EQ_FUNCTION_ProcessKeyUp, ProcessKeyUp_Detour, ProcessKeyUp_Trampoline);
-	
-	EzDetour(EQ_FUNCTION_CEverQuest__RMouseDown, RightMouseDown_Detour, RightMouseDown_Trampoline);
-	EzDetour(EQ_FUNCTION_CEverQuest__RMouseUp, RightMouseUp_Detour, RightMouseUp_Trampoline);
-	EzDetour(EQ_FUNCTION_CEverQuest__LMouseDown, LeftMouseDown_Detour, LeftMouseDown_Trampoline);
-	EzDetour(EQ_FUNCTION_CEverQuest__LMouseUp, LeftMouseUp_Detour, LeftMouseUp_Trampoline);
-	EzDetour(0x004FA8C5, do_quit_Detour, do_quit_Trampoline);
-	
-	//EzDetour(0x00559BF4, GetCpuTicks2_Detour, GetCpuTicks2_Trampoline);
-
-	EzDetour(0x00538CE6, CEverQuest__DisplayScreen_Detour, CEverQuest__DisplayScreen_Trampoline);
 
 	// Add MGB for Beastlords
 	EzDetour(0x004B8231, sub_4B8231_Detour, sub_4B8231_Trampoline);
@@ -5334,82 +4329,19 @@ void InitHooks()
 	PatchA((void *)0x004c55b7, &jge, 1);
 
 	//this one is here for eqplaynice - eqmule
-
-	EzDetour(0x0055AFE2, &Eqmachooks::CDisplay__Process_Events_Detour, &Eqmachooks::CDisplay__Process_Events_Trampoline);
-
+  	
 	EzDetour(EQ_FUNCTION_HandleMouseWheel, HandleMouseWheel_Detour, HandleMouseWheel_Trampoline);
 	// for command line parsing
 	EzDetour(0x004F35E5, sub_4F35E5_Detour, sub_4F35E5_Trampoline);
 
-	EQMACMQ_REAL_CCharacterSelectWnd__Quit = (EQ_FUNCTION_TYPE_CCharacterSelectWnd__Quit)DetourFunction((PBYTE)EQ_FUNCTION_CCharacterSelectWnd__Quit, (PBYTE)EQMACMQ_DETOUR_CCharacterSelectWnd__Quit);
 
 	EQMACMQ_REAL_CEverQuest__InterpretCmd = (EQ_FUNCTION_TYPE_CEverQuest__InterpretCmd)DetourFunction((PBYTE)EQ_FUNCTION_CEverQuest__InterpretCmd, (PBYTE)EQMACMQ_DETOUR_CEverQuest__InterpretCmd);
 
-	char szResult[255];
-	char szDefault[255];
-	sprintf(szDefault, "%s", "TRUE");
-	DWORD error = GetPrivateProfileStringA("Options", "WindowedMode", szDefault, szResult, 255, "./eqclient.ini");
-	if (GetLastError())
-	{
-		WritePrivateProfileStringA_tramp("Options", "WindowedMode", szDefault, "./eqclient.ini");
-	}
-	if (!strcmp(szResult, "FALSE")) {
-		start_fullscreen = true;
-	}
-	else {
-		start_fullscreen = false;
-	}
-
-	sprintf(szDefault, "%d", 1);
-	error = GetPrivateProfileStringA("Options", "MouseRightHanded", szDefault, szResult, 255, "./eqclient.ini");
-	if (!GetLastError()) {
-		if (!strcmp(szResult, "0"))
-			RightHandMouse = false;
-	}
-	else {
-		WritePrivateProfileStringA_tramp("Options", "MouseRightHanded", szDefault, "./eqclient.ini");
-	}
-
-	sprintf(szDefault, "%d", 32);
-	error = GetPrivateProfileStringA("Defaults", "VideoModeBitsPerPixel", szDefault, szResult, 255, "./eqclient.ini");
-	if (!GetLastError())
-	{
-		// if set to 16 bit, change to 32
-		if (!strcmp(szResult, "16"))
-			WritePrivateProfileStringA_tramp("Defaults", "VideoModeBitsPerPixel", szDefault, "./eqclient.ini");
-	}
-	
-	sprintf(szDefault, "%d", 32);
-	error = GetPrivateProfileStringA("VideoMode", "BitsPerPixel", szDefault, szResult, 255, "./eqclient.ini");
-	if (!GetLastError())
-	{
-		// if set to 16 bit, change to 32
-		if (!strcmp(szResult, "16"))
-			WritePrivateProfileStringA_tramp("VideoMode", "BitsPerPixel", szDefault, "./eqclient.ini");
-	}
-	else {
-		// we do not have one set
-		DEVMODE dm;
-		// initialize the DEVMODE structure
-		ZeroMemory(&dm, sizeof(dm));
-		dm.dmSize = sizeof(dm);
-		DWORD bits = 32;
-		DWORD freq = 40;
-		if (0 != EnumDisplaySettings(NULL, ENUM_CURRENT_SETTINGS, &dm))
-		{
-			// get default display settings
-			bits = dm.dmBitsPerPel;
-			freq = dm.dmDisplayFrequency;
-		}
-		sprintf(szDefault, "%d", freq);
-		WritePrivateProfileStringA_tramp("VideoMode", "RefreshRate", szDefault, "./eqclient.ini");
-		sprintf(szDefault, "%d", bits);
-		WritePrivateProfileStringA_tramp("VideoMode", "BitsPerPixel", szDefault, "./eqclient.ini");
-	}
-
+		
 	// turn on chat keepalive
+	char szDefault[255];
 	sprintf(szDefault, "%d", 1);
-	WritePrivateProfileStringA_tramp("Defaults", "ChatKeepAlive", szDefault, "./eqclient.ini");
+	::WritePrivateProfileStringA("Defaults", "ChatKeepAlive", szDefault, "./eqclient.ini");
 	InitRaceShortCodeMap();
 	CheckClientMiniMods();
 	bInitalized=true;
@@ -5432,27 +4364,18 @@ void ExitHooks()
 	//RemoveDetour(0x4E829F); // HandleWorldMessage
 	//RemoveDetour(0x4AA8BC); // RenderWorld
 	//	RemoveDetour(gmfadress); // GetModuleFileNameA
-	//RemoveDetour(wpsaddress); // WriteProfileStringA
-	//RemoveDetour(0x4F2ED0); // SendExeChecksum
+		//RemoveDetour(0x4F2ED0); // SendExeChecksum
 	//RemoveDetour(0x40F3E0);
-	//RemoveDetour(cwAddress);
-	//RemoveDetour(0x55AFE2); // ProcessEvents
+		//RemoveDetour(0x55AFE2); // ProcessEvents
 	//RemoveDetour(EQ_FUNCTION_ProcessKeyDown); // process key down
-	//RemoveDetour(EQ_FUNCTION_ProcessKeyUp); // process key up
-	//RemoveDetour(EQ_FUNCTION_CEverQuest__RMouseDown);
-	//RemoveDetour(EQ_FUNCTION_CEverQuest__RMouseUp);
-	//RemoveDetour(EQ_FUNCTION_CEverQuest__LMouseDown);
-	//RemoveDetour(EQ_FUNCTION_CEverQuest__LMouseUp);
-	//RemoveDetour(0x55A4F4); // WndProc
+		//RemoveDetour(0x55A4F4); // WndProc
 	//RemoveDetour(0x538CE6); // DisplayScreen
 	//RemoveDetour(0x4F35E5); // command line parsing
 	//RemoveDetour(0x4B8231); // MGB for BST
 	//RemoveDetour(0x4A849E); // LoD fix
-	//RemoveDetour(0x4FA8C5); // do_quit
 	//RemoveDetour(EQ_FUNCTION_HandleMouseWheel);
 
-	//DetourRemove((PBYTE)EQMACMQ_REAL_CCharacterSelectWnd__Quit, (PBYTE)EQMACMQ_DETOUR_CCharacterSelectWnd__Quit);
-	//DetourRemove((PBYTE)EQMACMQ_REAL_CBuffWindow__RefreshBuffDisplay, (PBYTE)EQMACMQ_DETOUR_CBuffWindow__RefreshBuffDisplay);
+		//DetourRemove((PBYTE)EQMACMQ_REAL_CBuffWindow__RefreshBuffDisplay, (PBYTE)EQMACMQ_DETOUR_CBuffWindow__RefreshBuffDisplay);
 	//DetourRemove((PBYTE)EQMACMQ_REAL_CBuffWindow__PostDraw, (PBYTE)EQMACMQ_DETOUR_CBuffWindow__PostDraw);
 	//DetourRemove((PBYTE)EQMACMQ_REAL_EQ_Character__CastSpell, (PBYTE)EQMACMQ_DETOUR_EQ_Character__CastSpell);
 	//DetourRemove((PBYTE)EQMACMQ_REAL_CEverQuest__InterpretCmd, (PBYTE)EQMACMQ_DETOUR_CEverQuest__InterpretCmd);
@@ -5464,7 +4387,6 @@ BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 	{
 		InitHooks();
 		LoadIniSettings();
-		SetEQhWnd();
 		//CheckPromptUIChoice();
 		return TRUE;
 	}

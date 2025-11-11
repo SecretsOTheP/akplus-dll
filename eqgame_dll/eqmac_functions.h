@@ -375,7 +375,7 @@ public:
 		if (entity)
 			reinterpret_cast<void(__thiscall*)(EQSPAWNINFO*, unsigned char)>(0x50be3c)(entity, new_stance);
 	}
-	static inline void DoAnim(EQSPAWNINFO* entity, int a1, int a2, int a3, int a4, int a5)
+	static inline void DoAnim(EQSPAWNINFO* entity, int a1, int a2, int a3, float a4, int a5)
 	{
 		reinterpret_cast<void(__stdcall*)(EQSPAWNINFO*, int, int, int, float, int)>(0x4D933A)(entity, a1, a2, a3, a4, a5);
 	}
@@ -1189,12 +1189,12 @@ void EQ_ToggleBool(bool& b)
 
 float EQ_CalculateDistance(float x1, float y1, float x2, float y2)
 {
-	return sqrt(pow(x2 - x1, 2) + pow(y2 - y1, 2));
+	return sqrtf(powf(x2 - x1, 2) + powf(y2 - y1, 2));
 }
 
 float EQ_CalculateDistance3d(float x1, float y1, float z1, float x2, float y2, float z2)
 {
-	return sqrt(pow(x2 - x1, 2) + pow(y2 - y1, 2) + pow(z2 - z1, 2));
+	return sqrtf(powf(x2 - x1, 2) + powf(y2 - y1, 2) + powf(z2 - z1, 2));
 }
 
 void EQ_Rotate2d(float cx, float cy, float& x, float& y, float angle)
@@ -1692,7 +1692,7 @@ void EQ_WriteIntVarToChat(const char* name, int value)
 void EQ_WriteHexVarToChat(const char* name, int value)
 {
 	char text[128];
-	_snprintf_s(text, sizeof(text), _TRUNCATE, "%s: 0x%08X", value);
+	_snprintf_s(text, sizeof(text), _TRUNCATE, "%s: 0x%08X", name, value);
 
 	EQ_CLASS_CEverQuest->dsp_chat(text);
 }
