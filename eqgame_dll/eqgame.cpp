@@ -184,13 +184,8 @@ void UpdateTitle()
 		} while (cur != NULL);
 		new_title = str;
 	}
-	SetWindowTextA(*EQhWnd, new_title.c_str());
-#ifdef LOGGING
-	std::string outlog_name(new_title);
-	outlog_name += ".log";
-	freopen(outlog_name.c_str(), "w", stdout);
-#endif // LOGGING
 }
+
 #ifdef LOGGING
 void WriteLog(std::string logstring) {
 
@@ -669,6 +664,38 @@ void SkipSplash(HMODULE eqmain_dll)
 	PatchA((DWORD*)offset, &test1, sizeof(test1));
 }
 
+// This wnd proc is installed to intercept messages while the primary window's default (supplied by
+// eqw.dll) is active. Note that eqmain.dll replaces this temporarily while that screen is active
+// but then it will restore it.
+static WNDPROC original_wnd_proc = nullptr;
+static LRESULT CALLBACK GameDllWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
+{
+	switch (msg) {
+		case WM_SETTEXT:
+		  const char * title = reinterpret_cast<const char*>(lParam);
+			if (!strncmp(title, "Ever", 4)) {  // Allow status messages but replace default title.
+				lParam = reinterpret_cast<LPARAM>(new_title.c_str());
+			}
+		break;
+	}
+	return ::CallWindowProcA(original_wnd_proc, hwnd, msg, wParam, lParam);
+}
+
+// This patch happens immediately after the primary game window was created by user32 create window
+// but before the hook has returned to make the global game window's EQHWnd valid. So use the
+// eqw::GetGameWindow() to get a window handle if needed.
+static void PatchEqCreateWin()
+{
+  HMODULE dll = GetModuleHandleA("eqw.dll");
+  FARPROC fn = GetProcAddress(dll, "GetGameWindow");
+  HWND hwnd = reinterpret_cast<HWND(__cdecl *)()>(fn)();
+
+	original_wnd_proc = reinterpret_cast<WNDPROC>(::GetWindowLongA(hwnd, GWL_WNDPROC));
+  ::SetWindowLongA(hwnd, GWL_WNDPROC, reinterpret_cast<LONG>(GameDllWndProc));
+	UpdateTitle();
+	::SetWindowText(hwnd, new_title.c_str());
+}
+
 // This patch is registered with eqw.dll and executed each time eqmain.dll is loaded. The dll
 // can get loaded multiple times and also flushed from memory, so these calls must be safe to repeat.
 void PatchEqMain()
@@ -676,7 +703,7 @@ void PatchEqMain()
 	HINSTANCE eqmain_dll = GetModuleHandle("eqmain.dll");
 	if (!eqmain_dll)
 		return;
-	
+
 	// if new_main_dll is at right location in dll
 	// then add bypass for skipping splash screens.
 	DWORD checkpoint = (DWORD)GetProcAddress(eqmain_dll, "new_dll_main") ;
@@ -4204,7 +4231,6 @@ void PatchEqGfx()
 	//}
 }
 
-
 void InitHooks()
 {
 
@@ -4215,13 +4241,15 @@ void InitHooks()
 	auto eqw = GetModuleHandle("eqw.dll");
 	FARPROC set_eqmain = eqw ? GetProcAddress(eqw, "SetEqMainInitFn") : nullptr;
 	FARPROC set_eqgfx = eqw ? GetProcAddress(eqw, "SetEqGfxInitFn") : nullptr;
-	if (!set_eqmain || !set_eqgfx) {
+	FARPROC set_eqcreatewin = eqw ? GetProcAddress(eqw, "SetEqCreateWinInitFn") : nullptr;
+	if (!set_eqmain || !set_eqgfx || !set_eqcreatewin) {
 		MessageBoxA(NULL, "Installation error", "eqw.dll is not compatible", MB_OK | MB_ICONERROR);
 		ExitProcess(1);
 	}
 	// Install the patch callbacks for eqmain.dll and eqgfx_dx8.dll.
 	reinterpret_cast<void(__stdcall *)(void(*)())>(set_eqmain)(PatchEqMain);
 	reinterpret_cast<void(__stdcall *)(void(*)())>(set_eqgfx)(PatchEqGfx);
+	reinterpret_cast<void(__stdcall *)(void(*)())>(set_eqcreatewin)(PatchEqCreateWin);
 
 	PatchSaveBypass();
 	//heqwMod
@@ -4260,9 +4288,6 @@ void InitHooks()
 	// Buggy Armor Material Fixes
 	CDisplay__SetDefaultITAttachments_Trampoline = (EQ_FUNCTION_TYPE_CDisplay__SetDefaultITAttachments)DetourFunction((PBYTE)0x4A02E8, (PBYTE)CDisplay__SetDefaultITAttachments_4A02E8);
 	CDisplay__HandleMaterialEx_Trampoline = (EQ_FUNCTION_TYPE_CDisplay__HandleMaterialEx)DetourFunction((PBYTE)0x4A1EB7, (PBYTE)CDisplay__HandleMaterialEx_4A1EB7);
-
-	// Update the window title on the first enter zone callback.
-	OnZoneCallbacks.push_back(UpdateTitle);  // Note: This is getting overwritten by a mainloop call to SetWindowText.
 
 	// Sends DLL_VERSION to the server on zone-in
 	OnZoneCallbacks.push_back(SendDllVersion_OnZone);
