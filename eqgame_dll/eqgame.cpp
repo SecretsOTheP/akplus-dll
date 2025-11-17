@@ -4231,6 +4231,13 @@ void PatchEqGfx()
 	//}
 }
 
+// Reduce boot time by 5 to 7 seconds just by reducing a default sleep value in LoadWorld.
+void FastLoadWorldPatch() {
+	int patch_address = 0x004a8240;
+	BYTE new_sleep_time = 1;  // Default sleep time is 50 ms.
+	PatchT(patch_address, new_sleep_time);
+}
+
 void InitHooks()
 {
 
@@ -4362,6 +4369,7 @@ void InitHooks()
 
 	EQMACMQ_REAL_CEverQuest__InterpretCmd = (EQ_FUNCTION_TYPE_CEverQuest__InterpretCmd)DetourFunction((PBYTE)EQ_FUNCTION_CEverQuest__InterpretCmd, (PBYTE)EQMACMQ_DETOUR_CEverQuest__InterpretCmd);
 
+	FastLoadWorldPatch();
 		
 	// turn on chat keepalive
 	char szDefault[255];
