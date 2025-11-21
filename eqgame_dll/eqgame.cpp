@@ -1983,8 +1983,18 @@ int __cdecl CityCanStart_Detour(int a1, int a2, int a3, int a4) {
 
 int __cdecl ProcessKeyDown_Detour(int a1)
 {
-	if (EQ_OBJECT_CEverQuest != NULL && EQ_OBJECT_CEverQuest->GameState == 5 && a1 == 0x1c && AltPressed() && !ShiftPressed() && !CtrlPressed()) {
+	static const int DIK_RETURN = 0x1c;
+	if (EQ_OBJECT_CEverQuest != NULL && EQ_OBJECT_CEverQuest->GameState == 5 && a1 == DIK_RETURN && AltPressed() && !ShiftPressed()) {
 		auto eqw = GetModuleHandle("eqw.dll");
+
+		// Ctrl + Alt + Enter = trigger an attempt to reset the d3d8 driver and resources.
+		if (CtrlPressed()) {
+			FARPROC fn_reset = eqw ? GetProcAddress(eqw, "ResetD3D8") : nullptr;
+			if (fn_reset) fn_reset();
+			return ProcessKeyDown_Trampoline(0x00); // null;
+		}
+
+		// Alt + Enter = toggle full screen mode.
 		FARPROC fn_get = eqw ? GetProcAddress(eqw, "GetEnableFullScreen") : nullptr;
 		FARPROC fn_set = eqw ? GetProcAddress(eqw, "SetEnableFullScreen") : nullptr;
 		if (fn_get && fn_set) {
