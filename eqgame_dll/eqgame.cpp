@@ -4424,6 +4424,16 @@ void ExitHooks()
 	//DetourRemove((PBYTE)EQMACMQ_REAL_CEverQuest__InterpretCmd, (PBYTE)EQMACMQ_DETOUR_CEverQuest__InterpretCmd);
 }
 
+
+#define STRINGIZE(x) #x
+#define INT_TO_STRING(x) STRINGIZE(x)
+static constexpr char kVersionStr[] = INT_TO_STRING(DLL_VERSION) " (" __DATE__ " " __TIME__ ")";
+
+// Provide a method for users to check version compatibility.
+ extern "C" const char* __stdcall GetVersionStr() {
+  return kVersionStr;  // Parseable static const string.
+}
+
 BOOL APIENTRY DllMain( HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved )
 {
 	if (ul_reason_for_call==DLL_PROCESS_ATTACH)

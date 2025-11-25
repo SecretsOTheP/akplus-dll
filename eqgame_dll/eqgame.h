@@ -84,7 +84,7 @@ constexpr unsigned int SpawnAppearanceType_ClientDllMessage = 256;
 void SendCustomSpawnAppearanceMessage(unsigned __int16 feature_id, unsigned __int16 feature_value, bool is_request);
 
 // Song Window Support
-__declspec(dllexport) class CShortBuffWindow* GetShortDurationBuffWindow();
+class CShortBuffWindow* GetShortDurationBuffWindow();
 
 // Buggy Helmet Fix
 bool Handle_Out_OP_WearChange(WearChange_Struct* wc);
