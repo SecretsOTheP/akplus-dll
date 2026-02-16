@@ -1764,6 +1764,206 @@ void FixBazaarCrash()
 // Bazaar Crash Fix [end]
 // --------------------------------------------------------------------------
 
+// --------------------------------------------------------------------------
+// UseItem
+// --------------------------------------------------------------------------
+
+constexpr WORD CustomSpawnAppearanceMessage_UseItemFromBagSupported = 7;
+
+bool UseItem_Enabled = false;
+bool Rule_Click_From_Bag_Enabled = false; // controlled by server
+bool UseBagItemWithAlt_Enabled = false; // from ini
+bool UseBagItemWithCtrl_Enabled = false; // from ini
+bool UseBagItemWithShift_Enabled = false; // from ini
+bool UseBagItemWithNoMod_enabled = false; // from ini
+
+static bool IsValidItemToUse(_EQITEMINFO* item, bool is_equipped)
+{
+	// Common pre-checks, copying what the game does
+	if (!(item
+		&& item->IsContainer == 0 
+		&& item->Common.Charges > 0 
+		&& item->Common.SpellId >= 1 && item->Common.SpellId < 4000 
+		&& item->Common.Skill != 20
+		&& item->Common.Skill != 42 // poison
+		&& item->Common.Skill != 14 // food
+		&& item->Common.Skill != 15 // drink
+		&& item->Common.Skill != 38 // beer
+		&& item->Common.IsStackable >= 2)
+	) return false;
+	// Checking valid ClickType based on slot
+	if (is_equipped) {
+		if (!(item->Common.EffectType == 1 || item->Common.EffectType == 3 || item->Common.EffectType == 4 || item->Common.EffectType == 5)) return false;
+	} else {
+		if (!(item->Common.EffectType == 1 || item->Common.EffectType == 3 || item->Common.EffectType == 5)) return false;
+	}
+	return true;
+}
+
+static bool IsValidStateToUseItem()
+{
+
+	auto* char_info = EQ_OBJECT_CharInfo;
+	if (!char_info || char_info->StunnedState != 0) return false;
+
+	auto* self = EQ_OBJECT_PlayerSpawn;
+	if (!self) return false;
+	if (self->StandingState != 100 && self->StandingState != 110) return false;
+
+	auto* actor_info = self->ActorInfo;
+	if (!actor_info || actor_info->CastingSpellId != 0xFFFF) return false;
+
+	_EQCEVERQUEST* game = EQ_OBJECT_CEverQuest;
+	if (!game || !CEverQuest::IsOkToTransact(game)) return false;
+
+	short divine_aura = EQ_Character::TotalSpellAffects(char_info, 40, 1, 0);
+	if (divine_aura > 0) return false;
+
+	short silence = EQ_Character::TotalSpellAffects(char_info, 96, 1, 0);
+	if (silence > 0) return false;
+
+	return true;
+}
+
+static _EQITEMINFO** FindUseItemItemByName(char* name, size_t len, int& out_global_inv_slot)
+{
+
+	auto* char_info = EQ_OBJECT_CharInfo;
+	if (!char_info)
+	{
+		out_global_inv_slot = -1;
+		return nullptr;
+	}
+
+	// Equipped Items
+	for (int i = 0; i < EQ_NUM_INVENTORY_SLOTS; i++) {
+		if (IsValidItemToUse(char_info->InventoryItem[i], true) && strncmp(char_info->InventoryItem[i]->Name, name, len) == 0)
+		{
+			out_global_inv_slot = i + 1;
+			return &char_info->InventoryItem[i];
+		}
+	}
+
+	// Pack Items
+	for (int i = 0; i < EQ_NUM_INVENTORY_PACK_SLOTS; i++) {
+		if (IsValidItemToUse(char_info->InventoryPackItem[i], false) && strncmp(char_info->InventoryPackItem[i]->Name, name, len) == 0)
+		{
+			out_global_inv_slot = i + 22;
+			return &char_info->InventoryPackItem[i];
+		}
+	}
+
+	// Items in Bags
+	if (Rule_Click_From_Bag_Enabled)
+	{
+		for (int i = 0; i < EQ_NUM_INVENTORY_PACK_SLOTS; i++)
+		{
+			auto* container = char_info->InventoryPackItem[i];
+			if (!container || container->IsContainer != 1 || container->Container.Capacity > 10) continue;
+			int container_slots = container->Container.Capacity;
+			for (int s = 0; s < container_slots; s++)
+			{
+				if (IsValidItemToUse(container->Container.Item[s], false) && strncmp(container->Container.Item[s]->Name, name, len) == 0)
+				{
+					out_global_inv_slot = 250 + (10 * i) + s;
+					return &container->Container.Item[s];
+				}
+			}
+		}
+	}
+
+	out_global_inv_slot = -1;
+	return nullptr;
+}
+
+static int UseItemByName(char* name, size_t len)
+{
+	// Verify name is properly sized to match something
+	if (len == 0 || len > 63) return 0;
+	if (!IsValidStateToUseItem()) return 0;
+
+	EQ_Character* character = EQ_CLASS_EQ_Character;
+	if (!character) return 0;
+
+	int global_inv_slot = -1;
+	_EQITEMINFO** pItem = FindUseItemItemByName(name, len, global_inv_slot);
+
+	if (global_inv_slot < 1 || pItem == nullptr || *pItem == nullptr) return 0;
+	return character->CastSpell(10, 0, pItem, global_inv_slot);
+}
+
+static bool IsUseItemKeyHeld(bool allow_no_mod)
+{
+	BYTE* cxWndMgr = *(BYTE**)0x00809DB4;
+	if (!cxWndMgr) return false;
+	return (UseBagItemWithAlt_Enabled && cxWndMgr[0x55] == 0 && cxWndMgr[0x56] == 0 && cxWndMgr[0x57] == 1)
+		|| (UseBagItemWithShift_Enabled && cxWndMgr[0x55] == 1 && cxWndMgr[0x56] == 0 && cxWndMgr[0x57] == 0)
+		|| (UseBagItemWithCtrl_Enabled && cxWndMgr[0x55] == 0 && cxWndMgr[0x56] == 1 && cxWndMgr[0x57] == 0)
+		|| (allow_no_mod && UseBagItemWithNoMod_enabled && cxWndMgr[0x55] == 0 && cxWndMgr[0x56] == 0 && cxWndMgr[0x57] == 0);
+}
+
+void UseItemPatch_OnZone()
+{
+	Rule_Click_From_Bag_Enabled = false;
+	SendCustomSpawnAppearanceMessage(CustomSpawnAppearanceMessage_UseItemFromBagSupported, 1, true);
+}
+
+bool UseItemPatch_HandleHandshake(DWORD id, DWORD value, bool is_request)
+{
+	if (id == CustomSpawnAppearanceMessage_UseItemFromBagSupported) {
+		Rule_Click_From_Bag_Enabled = (value == 1);
+		return true;
+	}
+	return false;
+}
+
+typedef void(__thiscall* EQ_FUNCTION_TYPE_CInvSlot_HandleRButtonUp)(_EQCINVSLOT* this_ptr, int x, int y);
+EQ_FUNCTION_TYPE_CInvSlot_HandleRButtonUp CInvSlot_HandleRButtonUp_Trampoline;
+static void __fastcall CInvSlot_HandleRButtonUp_Detour(_EQCINVSLOT* invslot, int unused_edx, int x, int y)
+{
+	EQ_Character* character = EQ_CLASS_EQ_Character;
+	if (character && invslot && invslot->Item && invslot->InvSlotWnd)
+	{
+		if (invslot->InvSlotWnd->SlotID >= 250 && invslot->InvSlotWnd->SlotID <= 329) // Inside Bag
+		{
+			if (Rule_Click_From_Bag_Enabled && IsUseItemKeyHeld(true) && IsValidStateToUseItem() && IsValidItemToUse(invslot->Item, false))
+			{
+				character->CastSpell(10, 0, &invslot->Item, invslot->InvSlotWnd->SlotID);
+				return;
+			}
+		}
+		else if (invslot->InvSlotWnd->SlotID >= 1 && invslot->InvSlotWnd->SlotID <= 29) // Regular Clicky slots
+		{
+			bool is_equipped = invslot->InvSlotWnd->SlotID < 22;
+			// Allows using their Shift/Ctrl/Alt key combination to work on regular clicky slots too
+			if (IsUseItemKeyHeld(false) && IsValidStateToUseItem() && IsValidItemToUse(invslot->Item, is_equipped))
+			{
+				character->CastSpell(10, 0, &invslot->Item, invslot->InvSlotWnd->SlotID);
+				return;
+			}
+		}
+	}
+	
+	CInvSlot_HandleRButtonUp_Trampoline(invslot, x, y);
+}
+
+void ApplyUseItemPatch()
+{
+	UseItem_Enabled = true; // Enables using items '/use' and '/useexact'
+	OnZoneCallbacks.push_back(UseItemPatch_OnZone);
+	CustomSpawnAppearanceMessageHandlers.push_back(UseItemPatch_HandleHandshake);
+	// Enables Right-Clicking items from bags with the selected modifier
+	CInvSlot_HandleRButtonUp_Trampoline = (EQ_FUNCTION_TYPE_CInvSlot_HandleRButtonUp)DetourFunction((PBYTE)0x422804, (PBYTE)CInvSlot_HandleRButtonUp_Detour);
+	UseBagItemWithAlt_Enabled = GetEQClientIniFlag_55B947("Defaults", "UseBagItemWithAlt", "TRUE");
+	UseBagItemWithShift_Enabled = GetEQClientIniFlag_55B947("Defaults", "UseBagItemWithShift", "FALSE");
+	UseBagItemWithCtrl_Enabled = GetEQClientIniFlag_55B947("Defaults", "UseBagItemWithCtrl", "FALSE");
+	UseBagItemWithNoMod_enabled = GetEQClientIniFlag_55B947("Defaults", "UseBagItemWithNoModifier", "FALSE");
+}
+
+// --------------------------------------------------------------------------
+// UseItem [End]
+// --------------------------------------------------------------------------
+
 // * level_range - Players must be +/- this level range to pvp (default: 4)
 // * pvp_min_level - Players below this level cannot pvp (default: 6)
 void SetPvpLevelRange(BYTE level_range, BYTE pvp_min_level)
@@ -2103,6 +2303,35 @@ int __fastcall EQMACMQ_DETOUR_CEverQuest__InterpretCmd(void* this_ptr, void* not
 	if (strcmp(a2, "/rnpcdata") == 0) {
 		InitRaceShortCodeMap();
 		return EQMACMQ_REAL_CEverQuest__InterpretCmd(this_ptr, NULL, NULL);
+	}
+
+	if (UseItem_Enabled)
+	{
+		if (strcmp(a2, "/use") == 0 || strncmp(a2, "/use ", 5) == 0) {
+			size_t len = strlen(a2);
+			if (len >= 6 && len <= 68 && a2[5] > 32) {
+				UseItemByName(&a2[5], len - 5);
+			}
+			else {
+				print_chat("Use item useage:");
+				print_chat("/use <item prefix>");
+				print_chat("/useexact <item name>");
+			}
+			return 0;
+		}
+
+		if (strcmp(a2, "/useexact") == 0 || strncmp(a2, "/useexact ", 10) == 0) {
+			size_t len = strlen(a2);
+			if (len >= 11 && len <= 73 && a2[10] > 32) {
+				UseItemByName(&a2[10], 63);
+			}
+			else {
+				print_chat("Use item useage:");
+				print_chat("/use <item prefix>");
+				print_chat("/useexact <item name>");
+			}
+			return 0;
+		}
 	}
 
 	if (strcmp(a2, "/songs") == 0) {
@@ -4352,7 +4581,9 @@ void InitHooks()
 	FixBazaarCrash();
 
 	SetPvpLevelRange(100, 0);
-	
+
+	ApplyUseItemPatch();
+
 	// This detours key press down handler, so we can capture alt-enter to switch video modes
 	EzDetour(EQ_FUNCTION_ProcessKeyDown, ProcessKeyDown_Detour, ProcessKeyDown_Trampoline);
 

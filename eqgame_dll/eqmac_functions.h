@@ -359,6 +359,10 @@ public:
 	int CEverQuest::MoveToZone(int zoneId, char* text, int destinationType, int zoneRequestReason);
 	int CEverQuest::LootCorpse(class EQPlayer* spawn, int unknown);
 	void CEverQuest::DropHeldItemOnGround(bool showDropMessage);
+
+	static inline BYTE IsOkToTransact(struct _EQCEVERQUEST* this_ptr) {
+		return reinterpret_cast<BYTE(__thiscall*)(_EQCEVERQUEST*)>(0x54825C)(this_ptr);
+	}
 };
 
 CEverQuest** EQ_CLASS_ppCEverQuest = (CEverQuest**)EQ_POINTER_CEverQuest;
