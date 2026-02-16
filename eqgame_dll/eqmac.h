@@ -2558,12 +2558,63 @@ typedef struct _EQCSPELLBOOKWND
 	/* ...... */
 } EQCSPELLBOOKWND, * PEQSPELLBOOKWND;
 
+typedef struct _EQINVSLOTWND
+{
+	/* 0x0000 */ struct _EQWND EQWnd;
+	/*0x0ac*/ BYTE Unknown0x0ac[0x4];
+	/*0x0b0*/ DWORD ZLayer2;
+	/*0x0b4*/ BYTE Unknown0x0b4[0x28];
+	/*0x0dc*/ DWORD FadeTickCount;
+	/*0x0e0*/ BYTE Unknown0x0e0; /* CXWnd::StartFade */
+	/*0x0e1*/ BYTE Unknown0x0e1; /* CXWnd::StartFade */
+	/*0x0e2*/ BYTE Unknown0x0e2;
+	/*0x0e3*/ BYTE Unknown0x0e3;
+	/*0x0e4*/ DWORD Unknown0x0e4; /* CXWnd::StartFade, CXWnd::Minimize */
+	/*0x0e8*/ DWORD VScrollMax;
+	/*0x0ec*/ DWORD VScrollPos;
+	/*0x0f0*/ DWORD HScrollMax;
+	/*0x0f4*/ DWORD HScrollPos;
+	/*0x0f8*/ BYTE ValidCXWnd;
+	/*0x0f9*/ BYTE Unused0x0f9[0x3];
+	/*0x0fc*/ union {
+		struct ListWndColInfo* ColInfoArray;  // Row-length array of info structures.
+		struct pCXSTR* SidlText;
+		DWORD Items;
+		struct ListWnd* CmbListWnd;
+	};
+	/*0x100*/ union {
+		struct _CXSTR* SidlScreen;
+		DWORD SlotID;
+		DWORD Caret_Start;
+		DWORD ItemCount;
+	};
+	union {
+		/*0x104*/ LPVOID SidlPiece; /* CScreenPieceTemplate (important) */
+		DWORD Caret_End;
+	};
+	/*0x108*/ BYTE Checked;
+	/*0x109*/ BYTE Highlighted;
+	/*0x10a*/ BYTE Unused0x10a[0x2];
+	/*0x10c*/ DWORD TextureAnim; /* used in CSidlScreenWnd::AddButtonToRadioGroup */
+	/*0x110*/ DWORD InputText; // CXSTR
+	/* 0x0114 */ BYTE Unknown0114;
+	/* 0x0115 */ BYTE Unknown0015;  // Passed in as param_3 to InvSlot::HandleLButtonUp().
+	/* 0x0116 */ BYTE Unknown0116;
+	/* 0x0117 */ BYTE Unknown0117;
+	/* 0x0118 */ struct _EQCINVSLOT* invSlot;
+	/* 0x011C */ DWORD Unknown011c;
+	/* 0x0120 */ DWORD IsActive;  // Set to 1 when mouse has triggered an interaction, 0 when released.
+	/* 0x0124 */ DWORD Unknown0124;
+	/* 0x0128 */ DWORD Unknown0128;
+} EQINVSLOTWND, *PEQINVSLOTWND;
+
 typedef struct _EQCINVSLOT
 {
-	/* 0x0000 */ DWORD Unknown0000;
-	/* 0x0004 */ DWORD Unknown0004;
-	/* 0x0008 */ DWORD Unknown0008;
-	/* 0x000C */ DWORD SlotId;
+	/* 0x0000 */ DWORD* destructor; // Pointer to pointer to CInvSlot::~CInvSlot.
+	/* 0x0004 */ struct _EQINVSLOTWND* InvSlotWnd; // Points back to "parent"
+	/* 0x0008 */ DWORD TextureAnimation; // Also copied to invSlotWnd->TextureAnimation
+	/* 0x000C */ DWORD Index; // Index to CInvSlotMgr->invSlots[i]. This changes as containers are opened/closed.
+	/* 0x0010 */ struct _EQITEMINFO* Item;
 	/* ...... */
 } EQCINVSLOT, *PEQCINVSLOT;
 
