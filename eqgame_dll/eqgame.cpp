@@ -2457,7 +2457,8 @@ static bool IsValidStateToUseItem()
 	if (!char_info || char_info->StunnedState != 0) return false;
 
 	auto* self = EQ_OBJECT_PlayerSpawn;
-	if (!self || self->StandingState != 100) return false;
+	if (!self) return false;
+	if (self->StandingState != 100 && self->StandingState != 110) return false;
 
 	auto* actor_info = self->ActorInfo;
 	if (!actor_info || actor_info->CastingSpellId != 0xFFFF) return false;
