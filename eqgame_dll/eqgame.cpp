@@ -2541,6 +2541,16 @@ static int UseItemByName(char* name, size_t len)
 	return character->CastSpell(10, 0, pItem, global_inv_slot);
 }
 
+static bool IsUseItemKeyHeld(bool allow_no_mod)
+{
+	BYTE* cxWndMgr = *(BYTE**)0x00809DB4;
+	if (!cxWndMgr) return false;
+	return (UseBagItemWithAlt_Enabled && cxWndMgr[0x55] == 0 && cxWndMgr[0x56] == 0 && cxWndMgr[0x57] == 1)
+		|| (UseBagItemWithShift_Enabled && cxWndMgr[0x55] == 1 && cxWndMgr[0x56] == 0 && cxWndMgr[0x57] == 0)
+		|| (UseBagItemWithCtrl_Enabled && cxWndMgr[0x55] == 0 && cxWndMgr[0x56] == 1 && cxWndMgr[0x57] == 0)
+		|| (allow_no_mod && UseBagItemWithNoMod_enabled && cxWndMgr[0x55] == 0 && cxWndMgr[0x56] == 0 && cxWndMgr[0x57] == 0);
+}
+
 void UseItemPatch_OnZone()
 {
 	Rule_Click_From_Bag_Enabled = false;
@@ -2560,25 +2570,26 @@ typedef void(__thiscall* EQ_FUNCTION_TYPE_CInvSlot_HandleRButtonUp)(_EQCINVSLOT*
 EQ_FUNCTION_TYPE_CInvSlot_HandleRButtonUp CInvSlot_HandleRButtonUp_Trampoline;
 static void __fastcall CInvSlot_HandleRButtonUp_Detour(_EQCINVSLOT* invslot, int unused_edx, int x, int y)
 {
-	if (Rule_Click_From_Bag_Enabled)
+	EQ_Character* character = EQ_CLASS_EQ_Character;
+	if (character && invslot && invslot->Item && invslot->InvSlotWnd)
 	{
-		BYTE* cxWndMgr = *(BYTE**)0x00809DB4;
-		EQ_Character* character = EQ_CLASS_EQ_Character;
-		if (character
-			&& cxWndMgr
-			&& invslot && invslot->Item && invslot->InvSlotWnd
-			&& invslot->InvSlotWnd->SlotID >= 250 && invslot->InvSlotWnd->SlotID <= 329 // Item is in a bag
-			&& (
-				(UseBagItemWithAlt_Enabled && cxWndMgr[0x55] == 0 && cxWndMgr[0x56] == 0 && cxWndMgr[0x57] == 1)
-			    || (UseBagItemWithShift_Enabled && cxWndMgr[0x55] == 1 && cxWndMgr[0x56] == 0 && cxWndMgr[0x57] == 0)
-				|| (UseBagItemWithCtrl_Enabled && cxWndMgr[0x55] == 0 && cxWndMgr[0x56] == 1 && cxWndMgr[0x57] == 0)
-				|| (UseBagItemWithNoMod_enabled && cxWndMgr[0x55] == 0 && cxWndMgr[0x56] == 0 && cxWndMgr[0x57] == 0)
-			)
-			&& IsValidStateToUseItem()
-			&& IsValidItemToUse(invslot->Item, false))
+		if (invslot->InvSlotWnd->SlotID >= 250 && invslot->InvSlotWnd->SlotID <= 329) // Inside Bag
 		{
-			character->CastSpell(10, 0, &invslot->Item, invslot->InvSlotWnd->SlotID);
-			return;
+			if (Rule_Click_From_Bag_Enabled && IsUseItemKeyHeld(true) && IsValidStateToUseItem() && IsValidItemToUse(invslot->Item, false))
+			{
+				character->CastSpell(10, 0, &invslot->Item, invslot->InvSlotWnd->SlotID);
+				return;
+			}
+		}
+		else if (invslot->InvSlotWnd->SlotID >= 1 && invslot->InvSlotWnd->SlotID <= 29) // Regular Clicky slots
+		{
+			bool is_equipped = invslot->InvSlotWnd->SlotID < 22;
+			// Allows using their Shift/Ctrl/Alt key combination to work on regular clicky slots too
+			if (IsUseItemKeyHeld(false) && IsValidStateToUseItem() && IsValidItemToUse(invslot->Item, is_equipped))
+			{
+				character->CastSpell(10, 0, &invslot->Item, invslot->InvSlotWnd->SlotID);
+				return;
+			}
 		}
 	}
 	
