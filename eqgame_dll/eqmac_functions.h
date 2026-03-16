@@ -571,6 +571,7 @@ public:
 		case 3362: // Rizlona's Call of Flame
 		case 3372: // Chorus of Marr
 		case 2741: // Sacred Barrier
+		case 3291: // Paragon of Spirit
 			return true;
 		default:
 			return false;
