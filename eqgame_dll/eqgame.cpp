@@ -1321,6 +1321,18 @@ int __fastcall EQMACMQ_DETOUR_CBuffWindow__PostDraw(CBuffWindow* this_ptr, void*
 	return result;
 }
 
+typedef short(__thiscall* EQFunctionType_EQCharacter__CalcSpellDuration)(EQCHARINFO*, _EQSPELLINFO*, BYTE, bool);
+EQFunctionType_EQCharacter__CalcSpellDuration EQCharacter__CalcSpellDuration_Trampoline;
+short __fastcall EQCharacter__CalcSpellDuration_Detour(EQCHARINFO* this_ptr, int u, _EQSPELLINFO* spell, BYTE casterLevel, bool unknown) {
+	INT16 ret = EQCharacter__CalcSpellDuration_Trampoline(this_ptr, spell, casterLevel, unknown);
+	// Fixes client-side buff duration prediction in OP_Action to match server.
+	// After OP_Buff, the duration will be overwritten anyway, but this fixes the displayed duration for the initial tick
+	if (spell && ret > 0 && EQ_Spell::IsShortBuffBox(spell->Id)) {
+		ret++;
+	}
+	return ret;
+}
+
 void EQMACMQ_DoMouseWheelZoom(int mouseWheelDelta)
 {
 	PEQSPAWNINFO playerSpawn = (PEQSPAWNINFO)EQ_OBJECT_PlayerSpawn;
@@ -5467,6 +5479,7 @@ void InitHooks()
 	
 	EQMACMQ_REAL_CBuffWindow__RefreshBuffDisplay = (EQ_FUNCTION_TYPE_CBuffWindow__RefreshBuffDisplay)DetourFunction((PBYTE)EQ_FUNCTION_CBuffWindow__RefreshBuffDisplay, (PBYTE)EQMACMQ_DETOUR_CBuffWindow__RefreshBuffDisplay);
 	EQMACMQ_REAL_CBuffWindow__PostDraw = (EQ_FUNCTION_TYPE_CBuffWindow__PostDraw)DetourFunction((PBYTE)EQ_FUNCTION_CBuffWindow__PostDraw, (PBYTE)EQMACMQ_DETOUR_CBuffWindow__PostDraw);
+	EQCharacter__CalcSpellDuration_Trampoline = (EQFunctionType_EQCharacter__CalcSpellDuration)DetourFunction((PBYTE)0x4CA746, (PBYTE)EQCharacter__CalcSpellDuration_Detour);
 	EQMACMQ_REAL_EQ_Character__CastSpell = (EQ_FUNCTION_TYPE_EQ_Character__CastSpell)DetourFunction((PBYTE)EQ_FUNCTION_EQ_Character__CastSpell, (PBYTE)EQMACMQ_DETOUR_EQ_Character__CastSpell);
 	heqwMod = GetModuleHandle("eqw.dll");
 	EQZoneInfo_Ctor_Trampoline = (EQ_FUNCTION_TYPE_EQZoneInfo__EQZoneInfo)DetourFunction((PBYTE)0x005223C6, (PBYTE)EQZoneInfo_Ctor_Detour);
