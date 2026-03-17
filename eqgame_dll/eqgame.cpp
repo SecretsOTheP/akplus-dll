@@ -5481,7 +5481,6 @@ void InitHooks()
 	EQMACMQ_REAL_CBuffWindow__RefreshBuffDisplay = (EQ_FUNCTION_TYPE_CBuffWindow__RefreshBuffDisplay)DetourFunction((PBYTE)EQ_FUNCTION_CBuffWindow__RefreshBuffDisplay, (PBYTE)EQMACMQ_DETOUR_CBuffWindow__RefreshBuffDisplay);
 	EQMACMQ_REAL_CBuffWindow__PostDraw = (EQ_FUNCTION_TYPE_CBuffWindow__PostDraw)DetourFunction((PBYTE)EQ_FUNCTION_CBuffWindow__PostDraw, (PBYTE)EQMACMQ_DETOUR_CBuffWindow__PostDraw);
 	EQCharacter__CalcSpellDuration_Trampoline = (EQFunctionType_EQCharacter__CalcSpellDuration)DetourFunction((PBYTE)0x4CA746, (PBYTE)EQCharacter__CalcSpellDuration_Detour);
-	PatchNopByRange(0x4C7484, 0x4C7484 + 8);
 
 	EQMACMQ_REAL_EQ_Character__CastSpell = (EQ_FUNCTION_TYPE_EQ_Character__CastSpell)DetourFunction((PBYTE)EQ_FUNCTION_EQ_Character__CastSpell, (PBYTE)EQMACMQ_DETOUR_EQ_Character__CastSpell);
 	heqwMod = GetModuleHandle("eqw.dll");
