@@ -106,6 +106,7 @@
       <AdditionalLibraryDirectories>..\detours\lib</AdditionalLibraryDirectories>
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>..\Release\eqgame.dll</OutputFile>
+      <ModuleDefinitionFile>eqgame_dll.def</ModuleDefinitionFile>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -122,6 +123,9 @@
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="eqgame_dll.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="eqgame_dll.def" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

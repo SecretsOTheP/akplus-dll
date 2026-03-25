@@ -1,0 +1,4 @@
+LIBRARY  eqgame
+EXPORTS
+  GetVersionStr
+  GetShortDurationBuffWindow

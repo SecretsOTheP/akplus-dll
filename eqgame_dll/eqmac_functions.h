@@ -374,9 +374,6 @@ public:
 	static inline BYTE IsOkToTransact(struct _EQCEVERQUEST* this_ptr) {
 		return reinterpret_cast<BYTE(__thiscall*)(_EQCEVERQUEST*)>(0x54825C)(this_ptr);
 	}
-	static inline char* trimName(struct _EQCEVERQUEST* this_ptr, const char* spawn_name) {
-		return reinterpret_cast<char* (__thiscall*)(struct _EQCEVERQUEST*, const char*)>(0x00537D39)(this_ptr, spawn_name);
-	}
 };
 
 CEverQuest** EQ_CLASS_ppCEverQuest = (CEverQuest**)EQ_POINTER_CEverQuest;
@@ -393,7 +390,7 @@ public:
 		if (entity)
 			reinterpret_cast<void(__thiscall*)(EQSPAWNINFO*, unsigned char)>(0x50be3c)(entity, new_stance);
 	}
-	static inline void DoAnim(EQSPAWNINFO* entity, int a1, int a2, int a3, int a4, int a5)
+	static inline void DoAnim(EQSPAWNINFO* entity, int a1, int a2, int a3, float a4, int a5)
 	{
 		reinterpret_cast<void(__stdcall*)(EQSPAWNINFO*, int, int, int, float, int)>(0x4D933A)(entity, a1, a2, a3, a4, a5);
 	}
@@ -1219,12 +1216,12 @@ void EQ_ToggleBool(bool& b)
 
 float EQ_CalculateDistance(float x1, float y1, float x2, float y2)
 {
-	return sqrt(pow(x2 - x1, 2) + pow(y2 - y1, 2));
+	return sqrtf(powf(x2 - x1, 2) + powf(y2 - y1, 2));
 }
 
 float EQ_CalculateDistance3d(float x1, float y1, float z1, float x2, float y2, float z2)
 {
-	return sqrt(pow(x2 - x1, 2) + pow(y2 - y1, 2) + pow(z2 - z1, 2));
+	return sqrtf(powf(x2 - x1, 2) + powf(y2 - y1, 2) + powf(z2 - z1, 2));
 }
 
 void EQ_Rotate2d(float cx, float cy, float& x, float& y, float angle)
@@ -1722,7 +1719,7 @@ void EQ_WriteIntVarToChat(const char* name, int value)
 void EQ_WriteHexVarToChat(const char* name, int value)
 {
 	char text[128];
-	_snprintf_s(text, sizeof(text), _TRUNCATE, "%s: 0x%08X", value);
+	_snprintf_s(text, sizeof(text), _TRUNCATE, "%s: 0x%08X", name, value);
 
 	EQ_CLASS_CEverQuest->dsp_chat(text);
 }
