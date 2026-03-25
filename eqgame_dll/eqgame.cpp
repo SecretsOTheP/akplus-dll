@@ -552,6 +552,10 @@ public:
 			}
 				
 		}
+		else if (Opcode == OP_ShopPlayerRecharge) {
+			Handle_In_OP_ShopPlayerRecharge((Merchant_Recharge_Struct*)Buffer, len);
+			return 1; // Custom Packet, don't pass to client
+		}
 		/*if (Opcode == 0x400C) {
 			// not using new UI
 			if (!*(BYTE*)0x8092D8) {
