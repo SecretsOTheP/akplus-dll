@@ -531,10 +531,10 @@ public:
 	unsigned char CEverQuest__HandleWorldMessage_Detour(DWORD *con,unsigned __int32 Opcode,char *Buffer,unsigned __int32 len)
 	{
 		//std::cout << "Opcode: 0x" << std::hex << Opcode << std::endl;
-		switch (Opcode) {
-		case 0x4052: //OP_ItemOnCorpse=0x5240
+		if(Opcode==0x4052) {//OP_ItemOnCorpse
 			return msg_send_corpse_equip((EQ_Equipment*)Buffer);
-		case 0x4038: // OP_ShopDelItem=0x3840
+		}
+		else if (Opcode == 0x4038) { // OP_ShopDelItem=0x3840
 			if (!*(BYTE*)0x8092D8) {
 				return NULL;
 				// stone skin UI doesn't like this
@@ -550,11 +550,12 @@ public:
 					return NULL;
 				*/
 			}
-			break;
-		/*
-		case 0x400C:
+				
+		}
+		/*if (Opcode == 0x400C) {
 			// not using new UI
 			if (!*(BYTE*)0x8092D8) {
+
 				if (len > 2) {
 					unsigned char *buff = new unsigned char[28960];
 					memcpy(buff, Buffer, 2);
@@ -586,10 +587,11 @@ public:
 					outstring += " input len = ";
 					outstring += std::to_string(len);
 					WriteLog(outstring);
-
+					
 				}
 			}
 		}*/
+
 		return CEverQuest__HandleWorldMessage_Trampoline(con,Opcode,Buffer,len);
 	}
 
@@ -4514,7 +4516,7 @@ static void Handle_In_OP_ShopPlayerRecharge(Merchant_Recharge_Struct* response, 
 	}
 
 	auto* merchant = EQ_OBJECT_ActiveMerchantSpawn;
-	char* merchant_name = merchant ? CEverQuest::trimName(EQ_OBJECT_CEverQuest, merchant->Name) : "the merchant";
+	char* merchant_name = merchant ? EQ_CLASS_CEverQuest->trimName(merchant->Name) : "the merchant";
 	PrintMoneyLong(buf, price);
 	print_chat("You give %s to %s.", buf, merchant_name);
 
@@ -4615,7 +4617,7 @@ static int __fastcall CMerchantWnd__WndNotification_Detour(EQMERCHANTWND* this_p
 			}
 		}
 	}
-	CMerchantWnd__WndNotification_Trampoline(this_ptr, sender, event, userdata);
+	return CMerchantWnd__WndNotification_Trampoline(this_ptr, sender, event, userdata);
 }
 
 static void ApplyVendorRechargePatch() {
