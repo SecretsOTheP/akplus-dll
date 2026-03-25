@@ -644,10 +644,10 @@ public:
 	unsigned char CEverQuest__HandleWorldMessage_Detour(DWORD *con,unsigned __int32 Opcode,char *Buffer,unsigned __int32 len)
 	{
 		//std::cout << "Opcode: 0x" << std::hex << Opcode << std::endl;
-		if(Opcode==0x4052) {//OP_ItemOnCorpse
+		switch (Opcode) {
+		case 0x4052: //OP_ItemOnCorpse=0x5240
 			return msg_send_corpse_equip((EQ_Equipment*)Buffer);
-		}
-		else if (Opcode == 0x4038) { // OP_ShopDelItem=0x3840
+		case 0x4038: // OP_ShopDelItem=0x3840
 			if (!*(BYTE*)0x8092D8) {
 				return NULL;
 				// stone skin UI doesn't like this
@@ -663,9 +663,9 @@ public:
 					return NULL;
 				*/
 			}
-				
-		}
-		/*if (Opcode == 0x400C) {
+			break;
+		/*
+		case 0x400C:
 			// not using new UI
 			if (!*(BYTE*)0x8092D8) {
 
@@ -703,12 +703,14 @@ public:
 					
 				}
 			}
-		}*/
-		else if (Opcode == 0x41d8) { // OP_LogServer=0xc341
+			break;
+		*/
+		case 0x41d8:
 			can_fullscreen = true;
 #ifdef LOGGING
 			WriteLog("EQGAME: CEverQuest__HandleWorldMessage_Detour OP_LogServer=0xc341 Can go Fullscreen (1)");
 #endif
+			break;
 		}
 		return CEverQuest__HandleWorldMessage_Trampoline(con,Opcode,Buffer,len);
 	}
