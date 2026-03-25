@@ -969,6 +969,13 @@ Teleport = 11
 #define SE_ResistAll        111
 #define SE_Blank            254
 
+#define TOP_ANCHOR_TO_TOP    0x00000001
+#define BOTTOM_ANCHOR_TO_TOP 0x00000100
+#define LEFT_ANCHOR_TO_LEFT  0x00010000
+#define RIGHT_ANCHOR_TO_LEFT 0x01000000
+
+#define OP_ShopPlayerRecharge 0x4213
+
 const size_t EQ_STRINGSIZE_TEXT_COLOR_NAME = 21;
 
 const char* EQ_STRING_TEXT_COLOR_NAME[EQ_STRINGSIZE_TEXT_COLOR_NAME] =
@@ -1531,7 +1538,8 @@ typedef struct _EQITEMCOMMONINFO
 	/* 0x00F0 */ INT16 Health;        // HP
 	/* 0x00F2 */ INT16 Mana;          // Mana
 	/* 0x00F4 */ INT16 ArmorClass;    // AC
-	/* 0x00F6 */ BYTE Unknown0246[2];
+	/* 0x00F6 */ INT8 MaxCharges;
+	/* 0x00F7 */ UINT8 GMFlag;
 	/* 0x00F8 */ BYTE Light;
 	/* 0x00F9 */ BYTE AttackDelay;    // Atk Delay
 	/* 0x00FA */ BYTE Damage;         // DMG
@@ -2446,7 +2454,11 @@ typedef struct _EQWND
 	/* 0x0064 */ PEQCXSTR ToolTipText;
 	/* 0x0068 */ BYTE Unknown0068[28];
 	/* 0x0084 */ PEQCXSTR XmlToolTipText;
-	/* 0x0088 */ BYTE Unknown0088[20];
+	/* 0x0088 */ int TopAnchorOffset;
+	/* 0x008C */ int BottomAnchorOffset;
+	/* 0x0090 */ int LeftAnchorOffset;
+	/* 0x0094 */ int RightAnchorOffset;
+	/* 0x0098 */ DWORD AnchorFlags; // See TOP_ANCHOR_TO_TOP, BOTTOM_ANCHOR_TO_TOP, LEFT_ANCHOR_TO_LEFT, RIGHT_ANCHOR_TO_LEFT
 	/* 0x009C */ BYTE UnfadedAlpha;
 	/* 0x009D */ BYTE Unknown009D;
 	/* 0x009E */ BYTE AlphaTransparency;
@@ -2486,6 +2498,24 @@ typedef struct _EQCXWND
 	/* 0x00AC */ BYTE Unknown00AC[140]; // skips the rest
 										/* 0x0138 */
 } EQCXWND, *PEQCXWND;
+
+typedef struct _EQMERCHANTWND
+{
+	/* 0x0000 */ struct _EQCSIDLWND CSidlWnd;
+	/* 0x0138 */ DWORD NextProcessFrameTime;
+	/* 0x013C */ DWORD Unknown13C;
+	/* 0x0140 */ EQITEMINFO* MerchantItems[80];
+	/* 0x0280 */ float MerchantGreed;
+	/* 0x0284 */ DWORD SelectedSlotID;
+	/* 0x0288 */ EQITEMINFO** SelectedItem;
+	/* 0x028C */ DWORD Unknown28C;
+	/* 0x0290 */ DWORD* BuySellElement;
+	/* 0x0294 */ _EQWND* BuyButton;
+	/* 0x0298 */ _EQWND* SellButton;
+	/* 0x029C */ struct _EQINVSLOTWND* InvSlotWnds[80];
+	/* 0x03DC */ _EQWND* DoneButton;
+	/* 0x03E0 */ _EQWND* MerchantSlots;
+} EQMERCHANTWND, *PEQMERCHANTWND;
 
 typedef struct _EQCITEMDISPLAYWND
 {

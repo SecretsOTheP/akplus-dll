@@ -17,6 +17,7 @@
 #include <random>
 #include <functional>
 #include <vector>
+#include <unordered_map>
 
 // Sent on zone entry to the server.
 // Server uses this to tell the user if they are out of date.
@@ -668,7 +669,6 @@ public:
 		case 0x400C:
 			// not using new UI
 			if (!*(BYTE*)0x8092D8) {
-
 				if (len > 2) {
 					unsigned char *buff = new unsigned char[28960];
 					memcpy(buff, Buffer, 2);
@@ -700,7 +700,7 @@ public:
 					outstring += " input len = ";
 					outstring += std::to_string(len);
 					WriteLog(outstring);
-					
+
 				}
 			}
 			break;
@@ -711,6 +711,9 @@ public:
 			WriteLog("EQGAME: CEverQuest__HandleWorldMessage_Detour OP_LogServer=0xc341 Can go Fullscreen (1)");
 #endif
 			break;
+		case OP_ShopPlayerRecharge:
+			Handle_In_OP_ShopPlayerRecharge((Merchant_Recharge_Struct*)Buffer, len);
+			return 1; // Custom Packet, don't pass to client
 		}
 		return CEverQuest__HandleWorldMessage_Trampoline(con,Opcode,Buffer,len);
 	}
@@ -5252,6 +5255,337 @@ void PatchCheckLoreConflict()
 // Bank Improvements [end]
 // ---------------------------------------------------------------------------------------
 
+// --------------------------------------------------------------------------
+// Vendor Recharge
+// --------------------------------------------------------------------------
+
+static std::unordered_map<WORD, bool> RechargedItemIds{};
+static EQWND* MerchantWnd_Recharge_Button = nullptr;
+static EQWND* MerchantWnd_Recharge_Charges_Label = nullptr;
+static EQWND* MerchantWnd_Recharge_Price_Label = nullptr;
+static EQWND* MerchantWnd_Item_Label = nullptr;
+static int MerchantWndSlotsBottomAnchorShowUI = 0;
+static int MerchantWndSlotsBottomAnchorHideUI = 0;
+
+static void ShowRechargeUI(EQMERCHANTWND* wnd, bool show) {
+	if (!wnd) return;
+	if (MerchantWnd_Recharge_Button) CXWnd::Show(MerchantWnd_Recharge_Button, show, false);
+	if (MerchantWnd_Recharge_Charges_Label) CXWnd::Show(MerchantWnd_Recharge_Charges_Label, show, false);
+	if (MerchantWnd_Recharge_Price_Label) CXWnd::Show(MerchantWnd_Recharge_Price_Label, show, false);
+	if (MerchantWnd_Item_Label && MerchantWnd_Recharge_Button) CXWnd::Show(MerchantWnd_Item_Label, !show, false);
+	if (wnd->MerchantSlots) {
+		if (show) {
+			wnd->MerchantSlots->BottomAnchorOffset = MerchantWndSlotsBottomAnchorShowUI;
+		} else {
+			wnd->MerchantSlots->BottomAnchorOffset = MerchantWndSlotsBottomAnchorHideUI;
+		}
+	}
+}
+
+typedef EQMERCHANTWND* (__thiscall* EQ_FUNCTION_TYPE_CMerchantWnd__CMerchantWnd)(EQMERCHANTWND* this_ptr, DWORD parent);
+EQ_FUNCTION_TYPE_CMerchantWnd__CMerchantWnd CMerchantWnd__CMerchantWnd_Trampoline;
+static EQMERCHANTWND* __fastcall CMerchantWnd__CMerchantWnd_Detour(EQMERCHANTWND* this_ptr, int u, DWORD parent) {
+	EQMERCHANTWND* ret = CMerchantWnd__CMerchantWnd_Trampoline(this_ptr, parent);
+	MerchantWnd_Recharge_Button = (EQWND*)CSidlScreenWnd::GetChildItem(this_ptr, "MW_Recharge_Button");
+	MerchantWnd_Recharge_Charges_Label = (EQWND*)CSidlScreenWnd::GetChildItem(this_ptr, "MW_Recharge_Charges");
+	MerchantWnd_Recharge_Price_Label = (EQWND*)CSidlScreenWnd::GetChildItem(this_ptr, "MW_Recharge_Price");
+	MerchantWnd_Item_Label = (EQWND*)CSidlScreenWnd::GetChildItem(this_ptr, "MW_SelectedItemLabel");
+
+	// Special case for resizing SlotsWindow slightly if it's overlapping with the recharge button.
+	// But the UI has to set very specific flags (poweruser type thing for advance UI developers if they want to use it).
+	auto* slots = this_ptr->MerchantSlots;
+	if (slots) {
+		MerchantWndSlotsBottomAnchorHideUI = slots->BottomAnchorOffset;
+		MerchantWndSlotsBottomAnchorShowUI = slots->BottomAnchorOffset;
+		auto* btn = MerchantWnd_Recharge_Button;
+		if (btn
+			&& (slots->AnchorFlags & BOTTOM_ANCHOR_TO_TOP) == 0
+			&& (btn->AnchorFlags & TOP_ANCHOR_TO_TOP) == 0
+			&& (btn->AnchorFlags & BOTTOM_ANCHOR_TO_TOP) == 0
+			&& (slots->BottomAnchorOffset < btn->TopAnchorOffset)) {
+			MerchantWndSlotsBottomAnchorShowUI = btn->TopAnchorOffset + 3;
+		}
+	}
+
+	ShowRechargeUI(this_ptr, false);
+	return ret;
+}
+
+static char* PrintMoneyShort(char* buf, int money) {
+	sprintf(buf, "%ipp %igp %isp %icp", (money / 1000), (money / 100) % 10, (money / 10) % 10, money % 10);
+	return buf;
+}
+
+static char* PrintMoneyLong(char* buf, int money) {
+	sprintf(buf, "%i platinum %i gold %i silver %i copper", (money / 1000), (money / 100) % 10, (money / 10) % 10, money % 10);
+	return buf;
+}
+
+static bool ItemSupportRecharge(EQITEMINFO* item) {
+
+	if (!item  // Must not be null
+		|| item->IsContainer != 0 // Must be a common item
+		|| item->NoDrop == 0  // Must be tradable
+		|| item->Common.Skill == 20 // Must not be a spell scroll (type 20)
+		|| item->Common.IsStackable != 3 // Must be a normal non-stackable item (3)
+		|| item->Common.MaxCharges < 1) // Must use charges
+		return false;
+
+	if (item->Common.MaxCharges == 1) {
+		// EXPENDABLE items with only 1 charge are not rechargable, skip showing the UI for those
+		if (item->Common.EffectType == 3 || item->Common.Skill == 21) return false;
+	}
+
+	return true;
+}
+
+// Returns the selected merchant window item if it's a recharge supported item
+EQITEMINFO* CheckRechargeItem(EQMERCHANTWND* wnd) {
+	if (!wnd) return nullptr;
+	// Sell button disabled means it's no drop or can't be sold
+	if (!wnd->SellButton || !wnd->SellButton->IsEnabled || !wnd->SellButton->IsVisible) return nullptr;
+	// Needs to be in a valid inventory slot
+	DWORD item_slot = wnd->SelectedSlotID;
+	if ((item_slot < 1 || item_slot > 29) && (item_slot < 250 || item_slot > 329)) return nullptr;
+	if (!wnd->SelectedItem) return nullptr; // nothing selected
+	EQITEMINFO* item = *wnd->SelectedItem; // no item in slot
+	if (!item || !ItemSupportRecharge(item)) return nullptr; // item doesn't support recharge
+	return item;
+}
+
+// Calculates (BuyPrice-SellPrice), used for recharge cost calculation.
+INT64 GetRechargeBasePrice(EQMERCHANTWND* wnd, EQITEMINFO* item) {
+	INT64 buy = EQ_Item::GetBuyPrice(item, wnd, 1);
+	INT64 sell = EQ_Item::GetSellPrice(item, wnd, 1);
+	return buy > sell ? buy - sell : 1;
+}
+
+// Gets current price to recharge this item, allow for bulk discounts if detected
+static INT64 GetRechargeCurrentPrice(EQMERCHANTWND* wnd, EQITEMINFO* item) {
+	INT64 price = GetRechargeBasePrice(wnd, item);
+	if (RechargedItemIds.count(item->Id) == 0) {
+		price += price;
+	}
+	return price;
+}
+
+static void UpdateRechargeUI(EQMERCHANTWND* wnd) {
+
+	if (!wnd) return;
+
+	auto* merchant = EQ_OBJECT_ActiveMerchantSpawn;
+	if (!merchant || merchant->Type == 0) {
+		ShowRechargeUI(wnd, false);
+		return;
+	}
+
+	EQITEMINFO* item = CheckRechargeItem(wnd);
+	if (!item) {
+		ShowRechargeUI(wnd, false);
+		return;
+	}
+
+	int ui_lockout = *reinterpret_cast<int*>(0x7D0254);
+
+	// Update Tooltip
+	char buf[256] = { 0 };
+	char pricebuf[64] = { 0 };
+	char basepricebuf[64] = { 0 };
+
+	char charges = item->Common.Charges;
+	INT64 money = EQ_Character::GetInventoryMoney(EQ_OBJECT_CharInfo);
+	INT64 price = GetRechargeCurrentPrice(wnd, item);
+	INT64 base_price = GetRechargeBasePrice(wnd, item);
+	bool enabled = charges < item->Common.MaxCharges && money >= price && ui_lockout == 0;
+	PrintMoneyShort(pricebuf, price);
+	PrintMoneyShort(basepricebuf, base_price);
+
+	if (MerchantWnd_Recharge_Button) {
+		MerchantWnd_Recharge_Button->IsEnabled = enabled;
+		if (item) {
+			if (price == base_price) {
+				sprintf(buf, "Each: %s", pricebuf);
+			} else {
+				sprintf(buf, "First: %s. Each: %s", pricebuf, basepricebuf);
+			}
+		}
+		CXStr* tooltip = (CXStr*)&MerchantWnd_Recharge_Button->ToolTipText;
+		*tooltip = buf;
+	}
+
+	if (MerchantWnd_Recharge_Price_Label) {
+		CXStr* text = (CXStr*)&MerchantWnd_Recharge_Price_Label->Text;
+		*text = pricebuf;
+	}
+
+	if (MerchantWnd_Recharge_Charges_Label) {
+		CXStr* text = (CXStr*)&MerchantWnd_Recharge_Charges_Label->Text;
+		sprintf(buf, "Charges: %u/%i", item->Common.Charges, item->Common.MaxCharges);
+		*text = buf;
+	}
+
+	ShowRechargeUI(wnd, true);
+}
+
+static void Handle_In_OP_ShopPlayerRecharge(Merchant_Recharge_Struct* response, UINT32 len) {
+
+	int ui_lockout = *reinterpret_cast<int*>(0x7D0254);
+	if (ui_lockout <= 0) {
+		ui_lockout = 0;
+	} else {
+		ui_lockout--;
+	}
+	*reinterpret_cast<int*>(0x7D0254) = ui_lockout;
+
+	if (len < sizeof(Merchant_Recharge_Struct)) {
+		return;
+	}
+
+	char buf[96];
+	short itemslot = response->itemslot;
+	int price = response->price;
+	auto* charinfo = EQ_OBJECT_CharInfo;
+
+	if ((itemslot < 1 || itemslot > 29) && (itemslot < 250 || itemslot > 329)) {
+		return; // error
+	}
+
+	// success, update player state
+
+	if (EQ_Character::HandleMoney(charinfo, price)) {
+		int sound_mgr = *(int*)EQ_POINTER_EqSoundManager;
+		if (sound_mgr) reinterpret_cast<int(__thiscall*)(int, int, float)>(0x4D518B)(sound_mgr, 138, 0.0f); // PlaySound
+	} else {
+		charinfo->Copper = 0;
+		charinfo->Silver = 0;
+		charinfo->Gold = 0;
+		charinfo->Platinum = 0;
+	}
+
+	auto* merchant = EQ_OBJECT_ActiveMerchantSpawn;
+	char* merchant_name = merchant ? CEverQuest::trimName(EQ_OBJECT_CEverQuest, merchant->Name) : "the merchant";
+	PrintMoneyLong(buf, price);
+	print_chat("You give %s to %s.", buf, merchant_name);
+
+	// Now we're eligible for bulk discounts on recharging this item id
+	RechargedItemIds[response->itemid] = true;
+
+	EQITEMINFO* item = nullptr;
+	if (itemslot >= 1 && itemslot <= 21) {
+		item = charinfo->InventoryItem[itemslot - 1];
+	} else if (itemslot >= 22 && itemslot <= 29) {
+		item = charinfo->InventoryPackItem[itemslot - 22];
+	} else if (itemslot >= 250 && itemslot <= 329) {
+		int packslot = (itemslot - 250) / 10;
+		int itemindex = itemslot % 10;
+		auto* bag = charinfo->InventoryPackItem[packslot];
+		if (bag && bag->IsContainer == 1) {
+			item = bag->Container.Item[itemindex];
+		}
+	}
+
+	if (!item || item->Id != response->itemid) {
+		item = nullptr;
+		print_chat("Recharge Error: Couldn't update the item!");
+		return;
+	}
+
+	item->Common.Charges = response->charges;
+
+	EQMERCHANTWND* wnd = *reinterpret_cast<EQMERCHANTWND**>(0x63D664);
+	if (wnd) {
+		UpdateRechargeUI(wnd); // Refresh the charges/cost/recharge button
+		if (wnd->SellButton) {
+			wnd->SellButton->IsEnabled = false; // Turn off the SellButton so they don't accidentally sell something they just recharged.
+		}
+	}
+}
+
+static void Recharge(EQMERCHANTWND* wnd) {
+
+	if (!wnd) return;
+
+	EQCHARINFO* char_info = EQ_OBJECT_CharInfo;
+	if (!char_info) return;
+
+	EQSPAWNINFO* merchant = EQ_OBJECT_ActiveMerchantSpawn;
+	if (!merchant) return;
+	if (merchant->Type == 0) return; // PC (Trader)
+
+	int ui_lockout = *reinterpret_cast<int*>(0x7D0254);
+	if (ui_lockout != 0) return;
+
+	EQITEMINFO* item = CheckRechargeItem(wnd);
+	if (!item) return;
+
+	short item_slot = wnd->SelectedSlotID; // already valid, from CheckRechargeItem()
+
+	// Can't afford to recharge
+	INT64 money = EQ_Character::GetInventoryMoney(char_info);
+	INT64 price = GetRechargeCurrentPrice(wnd, item);
+	if (price > money) return;
+
+	char max_charges = item->Common.MaxCharges;
+	char charges = item->Common.Charges;
+	if (max_charges < 1 || charges >= max_charges) return;
+
+	// Send the recharge request
+	Merchant_Recharge_Struct packet;
+	packet.playerid = EQ_OBJECT_PlayerSpawn->SpawnId;
+	packet.npcid = merchant->SpawnId;
+	packet.itemid = item->Id;
+	packet.itemslot = item_slot;
+	packet.charges = item->Common.Charges;
+	packet.price = price; // ignored
+
+	*reinterpret_cast<int*>(0x7D0254) = 1; // ui_lockout++
+	UpdateRechargeUI(wnd);
+	Connection::SendMessage_(OP_ShopPlayerRecharge, &packet, sizeof(Merchant_Recharge_Struct), 1);
+}
+
+typedef int(__thiscall* EQ_FUNCTION_TYPE_CMerchantWnd__SelectBuySellSlot)(_EQMERCHANTWND* this_ptr, DWORD slot_id, DWORD icon);
+EQ_FUNCTION_TYPE_CMerchantWnd__SelectBuySellSlot CMerchantWnd__SelectBuySellSlot_Trampoline;
+static int __fastcall CMerchantWnd__SelectBuySellSlot_Detour(_EQMERCHANTWND* wnd, int u, DWORD slot_id, DWORD icon) {
+	int ret = CMerchantWnd__SelectBuySellSlot_Trampoline(wnd, slot_id, icon);
+	UpdateRechargeUI(wnd);
+	return ret;
+}
+
+typedef int(__thiscall* EQ_FUNCTION_TYPE_CMerchantWnd__WndNotification)(_EQMERCHANTWND*, _EQWND*, int, int*);
+EQ_FUNCTION_TYPE_CMerchantWnd__WndNotification CMerchantWnd__WndNotification_Trampoline;
+static int __fastcall CMerchantWnd__WndNotification_Detour(EQMERCHANTWND* this_ptr, int u, _EQWND* sender, int event, int* userdata) {
+	if (this_ptr && this_ptr->CSidlWnd.Unknown00134 == 1 && this_ptr->CSidlWnd.EQWnd.IsVisible == 1) {
+		if (event == 1) {
+			if (sender == this_ptr->SellButton) {
+				ShowRechargeUI(this_ptr, false);
+			} else if (sender && sender == MerchantWnd_Recharge_Button) {
+				Recharge(this_ptr);
+				return 0;
+			}
+		}
+	}
+	CMerchantWnd__WndNotification_Trampoline(this_ptr, sender, event, userdata);
+}
+
+static void ApplyVendorRechargePatch() {
+	OnZoneCallbacks.push_back([]() { 
+		RechargedItemIds.clear();
+	});
+	CleanUpUICallbacks.push_back([]() {
+		MerchantWnd_Item_Label = nullptr;
+		MerchantWnd_Recharge_Button = nullptr;
+		MerchantWnd_Recharge_Charges_Label = nullptr;
+		MerchantWnd_Recharge_Price_Label = nullptr;
+	});
+	CMerchantWnd__CMerchantWnd_Trampoline = (EQ_FUNCTION_TYPE_CMerchantWnd__CMerchantWnd)DetourFunction((PBYTE)0x426D4C, (PBYTE)CMerchantWnd__CMerchantWnd_Detour);
+	CMerchantWnd__WndNotification_Trampoline = (EQ_FUNCTION_TYPE_CMerchantWnd__WndNotification)DetourFunction((PBYTE)0x427299, (PBYTE)CMerchantWnd__WndNotification_Detour);
+	CMerchantWnd__SelectBuySellSlot_Trampoline = (EQ_FUNCTION_TYPE_CMerchantWnd__SelectBuySellSlot)DetourFunction((PBYTE)0x427614, (PBYTE)CMerchantWnd__SelectBuySellSlot_Detour);
+}
+
+// -----------------------------------------------------
+// Vendor Recharge [end]
+// -----------------------------------------------------
+
 DWORD gmfadress = 0;
 DWORD wpsaddress = 0;
 DWORD swAddress = 0;
@@ -5530,6 +5864,8 @@ void InitHooks()
 	SetPvpLevelRange(100, 0);
 
 	ApplyUseItemPatch();
+
+	ApplyVendorRechargePatch();
 
 	return_ProcessMouseEvent = (ProcessGameEvents_t)DetourFunction((PBYTE)o_MouseEvents, (PBYTE)ProcessMouseEvent_Hook);
 	//return_SetMouseCenter = (ProcessGameEvents_t)DetourFunction((PBYTE)o_MouseCenter, (PBYTE)SetMouseCenter_Hook);

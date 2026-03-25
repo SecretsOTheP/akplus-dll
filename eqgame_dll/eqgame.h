@@ -69,11 +69,22 @@ struct Action_Struct
 	/*34*/	unsigned short	unknown34;			// unused by client
 };
 
+struct Merchant_Recharge_Struct {
+	/*000*/ unsigned short npcid;          // Merchant NPC's entity id
+	/*002*/ unsigned short playerid;       // Player's entity id
+	/*004*/ signed   short itemslot;       // Item slot to recharge (1-29 or 250-329), Set to negative to indicate 'error'
+	/*006*/	unsigned short itemid;         // Item ID to recharge (must match slot)
+	/*008*/	unsigned int   price;          // Response: The recharge cost
+	/*012*/	signed   char  charges;        // Request:Client's current charges (must match slot) Response: New charges
+};
+
 struct RaceData
 {
 	std::string actor_tag = "";
 	std::string animation_fallback_tag = "";
 };
+
+void Handle_In_OP_ShopPlayerRecharge(Merchant_Recharge_Struct* response, unsigned int len);
 
 // Custom Race Support
 RaceData* GetCustomRaceData(int race, int gender);

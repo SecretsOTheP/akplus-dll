@@ -140,6 +140,9 @@ EQSPAWNINFO** EQ_OBJECT_ppTargetSpawnInfo = (EQSPAWNINFO**)EQ_POINTER_TARGET_SPA
 EQSPAWNINFO** EQ_OBJECT_ppCorpseSpawnInfo = (EQSPAWNINFO**)EQ_POINTER_CORPSE_SPAWN_INFO;
 #define EQ_OBJECT_CorpseSpawn (*EQ_OBJECT_ppCorpseSpawnInfo)
 
+EQSPAWNINFO** EQ_OBJECT_ppActiveMerchantSpawnInfo = (EQSPAWNINFO**)EQ_POINTER_MERCHANT_SPAWN_INFO;
+#define EQ_OBJECT_ActiveMerchantSpawn (*EQ_OBJECT_ppActiveMerchantSpawnInfo)
+
 EQCEVERQUEST** EQ_OBJECT_ppCEverquest = (EQCEVERQUEST**)EQ_POINTER_CEverQuest;
 #define EQ_OBJECT_CEverQuest (*EQ_OBJECT_ppCEverquest)
 
@@ -258,6 +261,9 @@ public:
 	int CXWnd::Show(char p1, char p2);
 	class CXRect CXWnd::GetRelativeRect(void) const;
 	class CXRect CXWnd::GetScreenRect(void) const;
+	static inline int Show(void* wnd, bool visible, bool bring_to_top) {
+		return reinterpret_cast<int(__thiscall*)(void*, char, char)>(0x572310)(wnd, visible, bring_to_top);
+	}
 };
 
 class CSidlScreenWnd : public CXWnd
@@ -265,6 +271,11 @@ class CSidlScreenWnd : public CXWnd
 public:
 	static int WndNotification(CSidlScreenWnd* self, void* sender, int type, int v3) {
 		return reinterpret_cast<int(__thiscall*)(void*, void*, int, int)>(0x0056E920)(self, sender, type, v3);
+	}
+	static void* GetChildItem(void* wnd, const char* name) {
+		EQCXSTR* cxstr = 0;
+		reinterpret_cast<_EQCXSTR** (__thiscall*)(_EQCXSTR**, const char* name)>(0x575F30)(&cxstr, name);
+		return reinterpret_cast<void* (__thiscall*)(void* wnd, EQCXSTR * data)>(0x570320)(wnd, cxstr);
 	}
 };
 
@@ -362,6 +373,9 @@ public:
 
 	static inline BYTE IsOkToTransact(struct _EQCEVERQUEST* this_ptr) {
 		return reinterpret_cast<BYTE(__thiscall*)(_EQCEVERQUEST*)>(0x54825C)(this_ptr);
+	}
+	static inline char* trimName(struct _EQCEVERQUEST* this_ptr, const char* spawn_name) {
+		return reinterpret_cast<char* (__thiscall*)(struct _EQCEVERQUEST*, const char*)>(0x00537D39)(this_ptr, spawn_name);
 	}
 };
 
@@ -469,6 +483,12 @@ public:
 	static int CheckLoreConflict(EQCHARINFO* this_ptr, WORD lore_item_id, EQITEMINFO* lore_item) {
 		return reinterpret_cast<int(__cdecl*)(EQCHARINFO*, WORD, EQITEMINFO*)>(0x4F1469)(this_ptr, lore_item_id, lore_item);
 	}
+	static DWORD GetInventoryMoney(EQCHARINFO* this_ptr) {
+		return reinterpret_cast<DWORD(__thiscall*)(EQCHARINFO*)>(0x4BFD92)(this_ptr);
+	}
+	static inline bool HandleMoney(EQCHARINFO* this_ptr, int price) {
+		return reinterpret_cast<bool(__cdecl*)(EQCHARINFO*, int)>(0x4F2E27)(this_ptr, price);
+	}
 
 };
 
@@ -490,6 +510,12 @@ public:
 			return atoi(&item->IdFile[2]);
 
 		return 0;
+	}
+	static int GetBuyPrice(EQITEMINFO* item, _EQMERCHANTWND* merchant_wnd, int quantity) {
+		return reinterpret_cast<int(__thiscall*)(EQITEMINFO*, float, int)>(0x4CDA6F)(item, merchant_wnd->MerchantGreed, quantity);
+	}
+	static int GetSellPrice(EQITEMINFO* item, _EQMERCHANTWND* merchant_wnd, int quantity) {
+		return reinterpret_cast<int(__thiscall*)(EQITEMINFO*, float, int)>(0x4CDAC6)(item, merchant_wnd->MerchantGreed, quantity);
 	}
 };
 
