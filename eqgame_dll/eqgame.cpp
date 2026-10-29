@@ -61,6 +61,7 @@ bool startup = true;
 
 bool g_bEnableBrownSkeletons = false;
 bool g_bEnableExtendedNameplates = true;
+bool g_bEnableBuffTimerOverlay = true;
 bool g_bSongWindowAutoHide = false;
 bool auto_login = false;
 char UserName[64];
@@ -809,6 +810,11 @@ int __fastcall EQMACMQ_DETOUR_CBuffWindow__PostDraw(CBuffWindow* this_ptr, void*
 {
 
 	int result = EQMACMQ_REAL_CBuffWindow__PostDraw(this_ptr);
+
+	if (!g_bEnableBuffTimerOverlay)
+	{
+		return result;
+	}
 
 	PEQCBUFFWINDOW buffWindow = (PEQCBUFFWINDOW)this_ptr;
 
@@ -4733,6 +4739,7 @@ void CheckClientMiniMods()
 
 	g_bEnableBrownSkeletons = GetEQClientIniFlag_55B947("Defaults", "EnableBrownSkeletonHack", "FALSE");
 	g_bEnableExtendedNameplates = GetEQClientIniFlag_55B947("Defaults", "EnableExtendedNameplateDistance", "TRUE");
+	g_bEnableBuffTimerOverlay = GetEQClientIniFlag_55B947("Defaults", "EnableBuffTimerOverlay", "TRUE");
 	g_bEnableClassicMusic = GetEQClientIniFlag_55B947("Defaults", "EnableClassicMusic", "FALSE");
 	if (g_bEnableClassicMusic)
 	{
