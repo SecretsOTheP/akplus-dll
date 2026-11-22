@@ -1975,6 +1975,81 @@ void ApplyUseItemPatch()
 // UseItem [End]
 // --------------------------------------------------------------------------
 
+// --------------------------------------------------------------------------
+// Item Mod2 Stats
+// --------------------------------------------------------------------------
+
+// Item mod2 stats (Strikethrough, Stun Resist, Shielding, ...)
+// The server sends these in spare bytes of the item struct that eqgame.exe never reads
+// (0x128-0x12F, see the server's mac_structs.h Item_Struct). Stock clients ignore them; here we
+// append them to the item display window text after the game builds it.
+// Servers that don't send mod2s leave these bytes zero, so nothing is added.
+
+#define EQ_ITEM_OFFSET_MOD2_STATS 0x128
+
+struct ItemMod2Stats
+{
+	/* 0x128 */ INT8 StrikeThrough;
+	/* 0x129 */ INT8 StunResist;
+	/* 0x12A */ INT8 CombatEffects;
+	/* 0x12B */ INT8 Accuracy;
+	/* 0x12C */ INT8 Avoidance;
+	/* 0x12D */ INT8 SpellShield;
+	/* 0x12E */ INT8 Shielding;
+	/* 0x12F */ INT8 DamageShield;
+};
+
+EQ_FUNCTION_TYPE_CItemDisplayWnd__SetItem CItemDisplayWnd__SetItem_Mod2_Trampoline;
+
+static void AppendMod2Line(std::string& out, const char* label, int value, bool percent)
+{
+	if (value == 0)
+		return;
+	char buf[64];
+	sprintf_s(buf, sizeof(buf), percent ? "%s: %d%%<BR>" : "%s: %d<BR>", label, value);
+	out += buf;
+}
+
+static int __fastcall CItemDisplayWnd__SetItem_Mod2_Detour(void* wnd, int unused_edx, EQ_Item* item, bool unknown)
+{
+	int result = CItemDisplayWnd__SetItem_Mod2_Trampoline(wnd, item, unknown);
+
+	if (!wnd || !item)
+		return result;
+
+	const ItemMod2Stats* m = (const ItemMod2Stats*)((BYTE*)item + EQ_ITEM_OFFSET_MOD2_STATS);
+	std::string lines;
+	AppendMod2Line(lines, "Shielding", m->Shielding, true);
+	AppendMod2Line(lines, "Spell Shield", m->SpellShield, true);
+	AppendMod2Line(lines, "Stun Resist", m->StunResist, true);
+	AppendMod2Line(lines, "Strikethrough", m->StrikeThrough, true);
+	AppendMod2Line(lines, "Avoidance", m->Avoidance, false);
+	AppendMod2Line(lines, "Accuracy", m->Accuracy, false);
+	AppendMod2Line(lines, "Combat Effects", m->CombatEffects, false);
+	AppendMod2Line(lines, "Damage Shield", m->DamageShield, false);
+	if (lines.empty())
+		return result;
+
+	// The game calls Activate() right after SetItem, which pushes DisplayText into the window,
+	// so appending to DisplayText here is enough. Start on a new line if the text doesn't already.
+	PEQCITEMDISPLAYWND display = (PEQCITEMDISPLAYWND)wnd;
+	PEQCXSTR text = display->DisplayText;
+	if (text && text->Length >= 4 && _strnicmp(&text->Text[text->Length - 4], "<BR>", 4) != 0)
+		lines = "<BR>" + lines;
+	((CXStr*)&display->DisplayText)->operator+=(lines.c_str());
+
+	return result;
+}
+
+void ApplyItemMod2DisplayPatch()
+{
+	CItemDisplayWnd__SetItem_Mod2_Trampoline = (EQ_FUNCTION_TYPE_CItemDisplayWnd__SetItem)DetourFunction((PBYTE)0x423640, (PBYTE)CItemDisplayWnd__SetItem_Mod2_Detour);
+}
+
+// --------------------------------------------------------------------------
+// Item Mod2 Stats [End]
+// --------------------------------------------------------------------------
+
 // * level_range - Players must be +/- this level range to pvp (default: 4)
 // * pvp_min_level - Players below this level cannot pvp (default: 6)
 void SetPvpLevelRange(BYTE level_range, BYTE pvp_min_level)
@@ -4873,6 +4948,7 @@ void InitHooks()
 
 	// Horse Support
 	ApplyHorseQolPatches();
+	ApplyItemMod2DisplayPatch(); // Shows item mod2 stats (Shielding, Stun Resist, ...) in the item display window
 	
 	// Buggy Armor Material Fixes
 	CDisplay__SetDefaultITAttachments_Trampoline = (EQ_FUNCTION_TYPE_CDisplay__SetDefaultITAttachments)DetourFunction((PBYTE)0x4A02E8, (PBYTE)CDisplay__SetDefaultITAttachments_4A02E8);
