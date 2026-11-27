@@ -2008,7 +2008,9 @@ static int __fastcall CItemDisplayWnd__SetItem_Mod2_Detour(void* wnd, int unused
 {
 	int result = CItemDisplayWnd__SetItem_Mod2_Trampoline(wnd, item, unknown);
 
-	if (!wnd || !item)
+	// Mod2 bytes live in the Common part of the item union. Containers and books use a shorter
+	// layout, so 0x128 is unrelated memory for them (and may be past the end of the item).
+	if (!wnd || !item || ((PEQITEMINFO)item)->IsContainer != 0)
 		return result;
 
 	const ItemMod2Stats* m = (const ItemMod2Stats*)((BYTE*)item + EQ_ITEM_OFFSET_MOD2_STATS);
